@@ -22,7 +22,14 @@ public protocol PortForwarding {
 }
 
 extension PortForwarding {
-	func bind() -> NIOCore.EventLoopFuture<Void> {
+	private static func Log(_ name: Self.Type) -> Logger {
+		var logger = Logger(label: "com.aldunelabs.portforwarder.\(name)")
+
+		logger.logLevel = portForwarderLogLevel
+
+		return logger
+	}
+
 		let server: EventLoopFuture<any Channel> = bootstrap.bind(to: self.bindAddress)
 
 		server.whenComplete({ (result: Result<any Channel, Error>) in
@@ -30,9 +37,9 @@ extension PortForwarding {
 
 			switch result {
 			case let .success(channel):
-				logger.info("Listening on \(String(describing: channel.localAddress))")
+				Self.Log(type(of: self)).info("Listening on \(String(describing: channel.localAddress))")
 			case let .failure(error):
-				logger.error("Failed to bind \(self.bindAddress), \(error)")
+				Self.Log(type(of: self)).error("Failed to bind \(self.bindAddress), \(error)")
 			}
 		})
 
@@ -48,6 +55,8 @@ extension PortForwarding {
 				// The server wasn't created yet, so we can just shut down straight away and let the OS clean us up.
 				return self.serverLoop.makeSucceededFuture(())
 			}
+
+			Self.Log(type(of: self)).info("Close on \(String(describing: channel.localAddress))")
 
 			return channel.close()
 		}

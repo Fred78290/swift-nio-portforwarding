@@ -4,6 +4,11 @@ import NIOCore
 import NIOHTTP1
 import NIOPosix
 
+public var portForwarderLogLevel = Logger.Level.info
+
+func isDebugLog() -> Bool {
+	return portForwarderLogLevel < Logger.Level.info
+}
 
 final class ErrorHandler: ChannelInboundHandler {
     typealias InboundIn = Any
@@ -52,6 +57,14 @@ public class PortForwarder {
 	let mappedPorts: [MappedPort]
 	let remoteHost: String
 	let serverBootstrap: [PortForwarding]
+
+	private static func Log() -> Logger {
+		var logger = Logger(label: "com.aldunelabs.portforwarder.PortForwardingServer")
+
+		logger.logLevel = portForwarderLogLevel
+
+		return logger
+	}
 
 	deinit {
 		try? self.group.syncShutdownGracefully()

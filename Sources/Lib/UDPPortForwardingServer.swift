@@ -16,7 +16,13 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 	var last: Date
 	let channel: Channel
 	var task: RepeatedTask?
-	let remoteAddress: SocketAddress
+
+	private static func Log() -> Logger {
+		var logger = Logger(label: "com.aldunelabs.portforwarder.UDPWrapperHandler")
+		logger.logLevel = portForwarderLogLevel
+
+		return logger
+	}
 
 	deinit {
 		if let task = self.task {
@@ -40,8 +46,9 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 	@Sendable private func scheduled(_ task: RepeatedTask) -> EventLoopFuture<Void> {
 		let dt: TimeInterval = Date.now.timeIntervalSince(self.last)
 
-		if dt > 120 {
-			logger.info("Close UDP tunnel \(self.channel) <--> \(self.remoteAddress)")
+			if isDebugLog() {
+				Self.Log().debug("Close UDP tunnel \(self.inboundChannel) <--> \(self.remoteAddress)")
+			}
 
 			channel.close(promise: nil)
 
@@ -58,7 +65,9 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 		let data = self.unwrapInboundIn(data)
 		let envelope = AddressedEnvelope<ByteBuffer>(remoteAddress: self.remoteAddress, data: data.data)
 
-		self.logger.info("received data from: \(data.remoteAddress), forward to: \(self.remoteAddress)")
+		if isDebugLog() {
+			Self.Log().debug("received data from: \(data.remoteAddress), forward to: \(self.remoteAddress)")
+		}
 
 		self.last = .now
 
@@ -66,7 +75,7 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 	}
 
     public func errorCaught(context: ChannelHandlerContext, error: Error) {
-		logger.error("Error in tunnel: \(self.channel) <--> \(self.remoteAddress), \(error)")
+		Self.Log().error("Error in tunnel: \(self.outboundChannel) <--> \(self.remoteAddress), \(error)")
 
 		context.close(promise: nil)
     }
@@ -80,7 +89,14 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 	let logger: Logger
 	var task: RepeatedTask?
 
-	init(remoteAddress: SocketAddress) {
+	private static func Log() -> Logger {
+		var logger = Logger(label: "com.aldunelabs.portforwarder.InboundUDPWrapperHandler")
+		logger.logLevel = portForwarderLogLevel
+
+		return logger
+	}
+
+	init(remoteAddress: SocketAddress, ttl: Int) {
 		self.remoteAddress = remoteAddress
 		self.logger = Logger(label: "com.aldunelabs.portforwarder.InboundUDPWrapperHandler")
 	}
@@ -89,7 +105,9 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 		let envelope = self.unwrapInboundIn(data)
 		let eventLoop = context.eventLoop
 
-		self.logger.info("received data from: \(envelope.remoteAddress)")
+		if isDebugLog() {
+			Self.Log().debug("received data from: \(envelope.remoteAddress)")
+		}
 
 		let client: DatagramBootstrap = DatagramBootstrap(group: eventLoop)
 			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -97,8 +115,10 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 				let data: AddressedEnvelope<ByteBuffer> = AddressedEnvelope<ByteBuffer>(remoteAddress: self.remoteAddress, data: envelope.data)
 				let channelFuture = inboundChannel.pipeline.addHandler(UDPWrapperHandler(remoteAddress:envelope.remoteAddress, channel: inboundChannel))
 
-				self.logger.info("forward data from: \(envelope.remoteAddress) to \(self.remoteAddress)")
-		
+				if isDebugLog() {
+					Self.Log().debug("forward data from: \(envelope.remoteAddress) to \(self.remoteAddress)")
+				}
+
 				inboundChannel.writeAndFlush(UDPWrapperHandler.wrapOutboundOut(data), promise: nil)
 
 				return channelFuture
@@ -109,9 +129,9 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 		server.whenComplete { result in
 			switch result {
 			case .success:
-				self.logger.info("Success to send data to \(self.remoteAddress)")
+				Self.Log().info("Success to send data to \(self.remoteAddress)")
 			case let .failure(error):
-				self.logger.error("Failed to send to \(self.remoteAddress), \(error)")
+				Self.Log().error("Failed to send to \(self.remoteAddress), \(error)")
 			}
 		}
 	}
@@ -123,7 +143,7 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 	}
 
 	public func errorCaught(context: ChannelHandlerContext, error: Error) {
-		self.logger.error("Caught error: \(error.localizedDescription)")
+		Self.Log().error("Caught error: \(error.localizedDescription)")
 
 		// As we are not really interested getting notified on success or failure we just pass nil as promise to
 		// reduce allocations.

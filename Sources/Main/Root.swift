@@ -63,6 +63,9 @@ struct Root: ParsableCommand {
 	@Option(name: [.customLong("forward"), .customShort("f")], help: ArgumentHelp("forwarded port for host", valueName: "host:guest/(tcp|udp|both)"))
 	public var forwardedPorts: [ForwardedPort] = []
 
+	@Flag(help: "debug log")
+	public var debug: Bool = false
+
 	var mappedPorts: [MappedPort] {
 		get {
 			self.forwardedPorts.map { forwarded in
@@ -70,6 +73,13 @@ struct Root: ParsableCommand {
 			}
 		}
 	}
+
+	func validate() throws {
+		if self.debug {
+			portForwarderLogLevel = Logger.Level.debug
+		}
+	}
+
 	mutating func run() throws {
 		let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "0.0.0.0")
 

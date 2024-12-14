@@ -13,14 +13,29 @@ final class TCPWrapperHandler: ChannelDuplexHandler {
 	typealias OutboundIn = ByteBuffer
 	typealias OutboundOut = ByteBuffer
 
+	private static func Log() -> Logger {
+		var logger = Logger(label: "com.aldunelabs.portforwarder.TCPWrapperHandler")
+		logger.logLevel = portForwarderLogLevel
+
+		return logger
+	}
+
 	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
 		let data = self.unwrapInboundIn(data)
+
+		if isDebugLog() {
+			Self.Log().debug("read data from: \(String(describing: context.channel.remoteAddress))")
+		}
 
 		context.fireChannelRead(self.wrapInboundOut(data))
 	}
 
 	func write(context: ChannelHandlerContext, data: NIOAny, promise: EventLoopPromise<Void>?) {
 		let data = self.unwrapOutboundIn(data)
+
+		if isDebugLog() {
+			Self.Log().debug("write data to: \(String(describing: context.channel.remoteAddress))")
+		}
 
 		context.write(self.wrapOutboundOut(data), promise: promise)
 	}
@@ -34,6 +49,13 @@ final class TCPPortForwardingServer: PortForwarding {
 	let remoteAddress: SocketAddress
 	var channel: Channel?
 
+	private static func Log() -> Logger {
+		var logger = Logger(label: "com.aldunelabs.portforwarder.TCPPortForwardingServer")
+		logger.logLevel = portForwarderLogLevel
+
+		return logger
+	}
+
 	init(group: EventLoopGroup, bindAddress: SocketAddress, remoteAddress: SocketAddress) {
 
 		self.group = group
@@ -44,10 +66,18 @@ final class TCPPortForwardingServer: PortForwarding {
 			.serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.childChannelInitializer { inboundChannel in
+				if isDebugLog() {
+					Self.Log().debug("connection from: \(String(describing: inboundChannel.remoteAddress))")
+				}
+
 				return ClientBootstrap(group: inboundChannel.eventLoop)
 					.connect(to: remoteAddress)
 					.flatMap { childChannel in
 						let (ours, theirs) = GlueHandler.matchedPair()
+
+						if isDebugLog() {
+							Self.Log().debug("connected to: \(String(describing: childChannel.remoteAddress))")
+						}
 
 						return childChannel.pipeline.addHandlers([TCPWrapperHandler(), ours, ErrorHandler()]).flatMap {
 							inboundChannel.pipeline.addHandlers([theirs, ErrorHandler()])
