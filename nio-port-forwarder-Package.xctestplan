@@ -1,0 +1,29 @@
+{
+  "configurations" : [
+    {
+      "id" : "6DDD3F2D-1267-460C-AE5B-8DA6C9623543",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:",
+      "identifier" : "nio-pfw",
+      "name" : "nio-pfw"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "PortForwarderTests",
+        "name" : "PortForwarderTests"
+      }
+    }
+  ],
+  "version" : 1
+}
