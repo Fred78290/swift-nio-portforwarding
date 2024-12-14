@@ -16,6 +16,36 @@ final class ErrorHandler: ChannelInboundHandler {
 
 public typealias ChannelResults = [Result<Void, any Error>]
 
+public struct PortForwarderClosure {
+	let channels : [EventLoopFuture<Channel>]
+	private let on: EventLoop
+
+	init(_ channels: [EventLoopFuture<Channel>], on: EventLoop) {
+		self.channels = channels
+		self.on = on
+	}
+
+	public func get() async throws {
+		let closing = self.channels.map { future in
+			future.flatMap { channel in
+				channel.closeFuture
+			}
+		}
+
+		try await EventLoopFuture.andAllComplete(closing, on: on).get()
+	}
+
+	public func wait() throws {
+		let closing = self.channels.map { future in
+			future.flatMap { channel in
+				channel.closeFuture
+			}
+		}
+
+		try EventLoopFuture.andAllComplete(closing, on: on).wait()
+	}
+}
+
 public class PortForwarder {
 	let group: EventLoopGroup
 	let bindAddress: String
@@ -66,18 +96,18 @@ public class PortForwarder {
 		return EventLoopFuture.andAllComplete(closed, on: self.group.next())
 	}
 
-	public func bind() -> EventLoopFuture<ChannelResults>? {
-		let binded = self.serverBootstrap.map { bootstrap in
+	public func bind() -> PortForwarderClosure {
+
+		let channels = self.serverBootstrap.map { bootstrap in
 			let result = bootstrap.bind()
-			let logger: Logger = Logger(label: "com.aldunelabs.portforwarder.PortForwardingServer")
 
 			result.whenComplete{ result in
 				switch result {
 				case .success:
-					logger.info("PortForwarder success: forward: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress)")
+					Self.Log().info("\(type(of: bootstrap)): bind complete: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress)")
 				case .failure:
 					let _ = result.mapError{
-						logger.error("PortForwarder failed:forward: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress), reason: \($0)")
+						Self.Log().error("\(type(of: bootstrap)): bind failed: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress), reason: \($0)")
 						
 						return $0
 					}
@@ -87,6 +117,6 @@ public class PortForwarder {
 			return result
 		}
 
-		return EventLoopFuture.whenAllComplete(binded, on: self.group.next())
+		return PortForwarderClosure(channels, on: self.group.next())
 	}
 }
