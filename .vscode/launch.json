@@ -6,7 +6,8 @@
 			"args": [
 				"10.0.0.21",
 				"-f",
-				"1080:80/tcp"
+				"1080:80/tcp",
+				"--debug"
 			],
 			"cwd": "${workspaceFolder:swift-nio-portforwarding}",
 			"name": "http nio-pfw",
@@ -19,7 +20,8 @@
 			"args": [
 				"10.0.0.21",
 				"-f",
-				"11022:22/tcp"
+				"11022:22/tcp",
+				"--debug"
 			],
 			"cwd": "${workspaceFolder:swift-nio-portforwarding}",
 			"name": "ssh nio-pfw",
@@ -32,10 +34,25 @@
 			"args": [
 				"10.0.0.1",
 				"-f",
-				"1053:53/udp"
+				"1053:53/udp",
+				"--debug"
 			],
 			"cwd": "${workspaceFolder:swift-nio-portforwarding}",
-			"name": "dns nio-pfw",
+			"name": "dns udp nio-pfw",
+			"program": "${workspaceFolder:swift-nio-portforwarding}/.build/debug/nio-pfw",
+			"preLaunchTask": "swift: Build Debug nio-pfw"
+		},
+		{
+			"type": "lldb",
+			"request": "launch",
+			"args": [
+				"10.0.0.1",
+				"-f",
+				"1053:53/both",
+				"--debug"
+			],
+			"cwd": "${workspaceFolder:swift-nio-portforwarding}",
+			"name": "dns both nio-pfw",
 			"program": "${workspaceFolder:swift-nio-portforwarding}/.build/debug/nio-pfw",
 			"preLaunchTask": "swift: Build Debug nio-pfw"
 		},
