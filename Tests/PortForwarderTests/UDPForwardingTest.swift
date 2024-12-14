@@ -110,15 +110,12 @@ private final class ClientEchoHandler: ChannelInboundHandler {
 final class UDPForwardingTests: XCTestCase {
 	let group: MultiThreadedEventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 	private let logger = Logger(label: "UDPForwardingTests")
-	var echoServer: DatagramBootstrap?
-	var echoClient: DatagramBootstrap?
-	var portForwarder: PortForwarder?
 
 	deinit {
 		try! group.syncShutdownGracefully()
 	}
 
-	func setupEchoClient(host: String, serverPort: Int, clientPort: Int) -> EventLoopFuture<ChannelResults> {
+	func setupEchoClient(host: String, serverPort: Int, clientPort: Int) -> EventLoopFuture<Channel> {
 		self.logger.info("Setup client: \(host), server: \(serverPort), client: \(clientPort)")
 
 		let echoClient = DatagramBootstrap(group: group.next())
@@ -128,18 +125,21 @@ final class UDPForwardingTests: XCTestCase {
 				channel.pipeline.addHandler(ClientEchoHandler(remoteAddress: try! SocketAddress.makeAddressResolvingHost(host, port: serverPort)))
 			}
 
-		self.echoClient = echoClient
-
 		let client = echoClient.bind(host: host, port: clientPort)
 
-		return EventLoopFuture.whenAllComplete([client.flatMap {
-					let channel = $0
+		client.whenComplete { result in
+			switch result {
+				case let .success(channel):
 					self.logger.info("client complete \(String(describing: channel.localAddress))")
-					return channel.closeFuture
-				}], on: self.group.next())
+				case let .failure(error):
+					self.logger.info("client failed \(error.localizedDescription)")
+			}
+		}
+
+		return client
 	}
 
-	func setupEchoServer(host: String, port: Int) -> EventLoopFuture<ChannelResults> {
+	func setupEchoServer(host: String, port: Int) -> EventLoopFuture<Channel> {
 		self.logger.info("Setup server: \(host), listen: \(port)")
 
 		let echoServer = DatagramBootstrap(group: group.next())
@@ -149,18 +149,21 @@ final class UDPForwardingTests: XCTestCase {
 				channel.pipeline.addHandler(ServerEchoHandler())
 			}
 
-		self.echoServer = echoServer
+		let server: EventLoopFuture<any Channel> = echoServer.bind(host: host, port: port)
 
-		let server = echoServer.bind(host: host, port: port)
-
-		return EventLoopFuture.whenAllComplete([server.flatMap {
-					let channel = $0
+		server.whenComplete { result in
+			switch result {
+				case let .success(channel):
 					self.logger.info("server complete \(String(describing: channel.localAddress))")
-					return channel.closeFuture
-				}], on: self.group.next())
+				case let .failure(error):
+					self.logger.info("server failed \(error.localizedDescription)")
+			}
+		}
+
+		return server
 	}
 
-	func setupForwarder(host: String, port: Int, guest: Int) -> EventLoopFuture<ChannelResults> {
+	func setupForwarder(host: String, port: Int, guest: Int) -> PortForwarder {
 		self.logger.info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
 		let portForwarder = try! PortForwarder(group: self.group.next(),
@@ -168,89 +171,36 @@ final class UDPForwardingTests: XCTestCase {
 						mappedPorts: [MappedPort(host: port, guest: guest, proto: .udp)],
 						bindAddress: host)
 
-		self.portForwarder = portForwarder
-
-		return portForwarder.bind()!
+		return portForwarder
 	}
 
 	func testUDPEchoDirect() async throws {
-		try await withThrowingTaskGroup(of: EventLoopFuture<ChannelResults>.self) { group in 
-			group.addTask {
-				self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort)
-			}
+		let server = try assertNoThrowWithValue(self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort).wait())
+		let client = try assertNoThrowWithValue(self.setupEchoClient(host: defaultEchoHost, serverPort: defaultServerPort, clientPort: defaultClientPort).wait())
 
-            try await Task.sleep(nanoseconds: 100_000_000)
-
-			group.addTask {
-				self.setupEchoClient(host: defaultEchoHost, serverPort: defaultServerPort, clientPort: defaultClientPort)
-			}
-			
-			let first: EventLoopFuture<ChannelResults>? = try await group.next()
-			let second: EventLoopFuture<ChannelResults>? = try await group.next()
-			
-			guard let echoServerResult = try await first?.get().first , let echoClientResult = try await second?.get().first else {
-				XCTFail("No result found")
-
-				return
-			}
-
-			switch echoServerResult {
-				case .success(_):
-					break
-				case .failure:
-					XCTFail("echo server error")
-			}
-
-			switch echoClientResult {
-				case .success(_):
-					break
-				case .failure:
-					XCTFail("echo client error")
-			}
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
 		}
+
+		try assertNoThrowWithValue(client.closeFuture.wait())
 	}
 
 	func testUDPEchoForwarding() async throws {
-		try await withThrowingTaskGroup(of: EventLoopFuture<ChannelResults>.self) { group in 
-			group.addTask {
-				self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort)
-			}
+		let forwarder = self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
 
-			group.addTask {
-				self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
-			}
+		_ = try assertNoThrowWithValue(forwarder.bind())
 
-            try await Task.sleep(nanoseconds: 100_000_000)
-
-			group.addTask {
-				self.setupEchoClient(host: defaultEchoHost, serverPort: defaultForwardPort, clientPort: defaultClientPort)
-			}
-			
-			let serverTask: EventLoopFuture<ChannelResults>? = try await group.next()
-			let _: EventLoopFuture<ChannelResults>? = try await group.next()
-			let clientTask: EventLoopFuture<ChannelResults>? = try await group.next()
-			
-			guard let echoServerResult = try await serverTask?.get().first , let echoClientResult = try await clientTask?.get().first else {
-				XCTFail("No result found")
-
-				return
-			}
-
-			switch echoServerResult {
-				case .success(_):
-					break
-				case .failure:
-					XCTFail("echo server error")
-			}
-
-			switch echoClientResult {
-				case .success(_):
-					break
-				case .failure:
-					XCTFail("echo client error")
-			}
-
-			try await portForwarder?.close().get()
+		defer {
+			XCTAssertNoThrow(try forwarder.syncShutdownGracefully())
 		}
+
+		let server = try assertNoThrowWithValue(self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort).wait())
+		let client = try assertNoThrowWithValue(self.setupEchoClient(host: defaultEchoHost, serverPort: defaultForwardPort, clientPort: defaultClientPort).wait())
+
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
+		}
+
+		try assertNoThrowWithValue(client.closeFuture.wait())
 	}
 }

@@ -197,17 +197,17 @@ final class TCPForwardingTests: XCTestCase {
 		return server
 	}
 
-	func setupForwarder(host: String, port: Int, guest: Int) -> EventLoopFuture<ChannelResults> {
+	func setupForwarder(host: String, port: Int, guest: Int) throws -> PortForwarder {
 		Log(label: "TCPForwardingTests").info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
-		let portForwarder = try! PortForwarder(group: self.group.next(),
+		let portForwarder = try PortForwarder(group: self.group.next(),
 						remoteHost: host,
 						mappedPorts: [MappedPort(host: port, guest: guest, proto: .tcp)],
 						bindAddress: host)
 
 		self.portForwarder = portForwarder
 
-		return portForwarder.bind()!
+		return portForwarder
 	}
 
 	func testTCPEchoDirect() async throws {
@@ -222,46 +222,21 @@ final class TCPForwardingTests: XCTestCase {
 	}
 
 	func testTCPEchoForwarding() async throws {
-		/*try await withThrowingTaskGroup(of: EventLoopFuture<ChannelResults>.self) { group in 
-			group.addTask {
-				self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort)
-			}
+		let forwarder = try assertNoThrowWithValue(self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort))
 
-			group.addTask {
-				self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
-			}
+		_ = try assertNoThrowWithValue(forwarder.bind())
 
-			try await Task.sleep(nanoseconds: 100_000_000)
+		defer {
+			XCTAssertNoThrow(try forwarder.syncShutdownGracefully())
+		}
 
-			group.addTask {
-				self.setupEchoClient(host: defaultEchoHost, serverPort: defaultForwardPort)
-			}
-			
-			let serverTask: EventLoopFuture<ChannelResults>? = try await group.next()
-			let _: EventLoopFuture<ChannelResults>? = try await group.next()
-			let clientTask: EventLoopFuture<ChannelResults>? = try await group.next()
-			
-			guard let echoServerResult = try await serverTask?.get().first , let echoClientResult = try await clientTask?.get().first else {
-				XCTFail("No result found")
+		let server = try assertNoThrowWithValue(self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort).wait())
+		let client = try assertNoThrowWithValue(self.setupEchoClient(host: defaultEchoHost, serverPort: defaultForwardPort).wait())
 
-				return
-			}
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
+		}
 
-			switch echoServerResult {
-				case .success(_):
-					Log(label: "TCPForwardingTests").info("Server completed")
-				case .failure:
-					XCTFail("echo server error")
-			}
-
-			switch echoClientResult {
-				case .success(_):
-					Log(label: "TCPForwardingTests").info("Client completed")
-				case .failure:
-					XCTFail("echo client error")
-			}
-
-			try await portForwarder?.close().get()
-		}*/
+		try assertNoThrowWithValue(client.closeFuture.wait())
 	}
 }
