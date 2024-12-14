@@ -17,7 +17,7 @@ public protocol PortForwarding {
     var group: EventLoopGroup { get }
 	
 	func setChannel(_ channel: Channel)
-	func bind() -> EventLoopFuture<Void>
+	func bind() -> EventLoopFuture<Channel>
 	func close() -> EventLoopFuture<Void>
 }
 
@@ -30,23 +30,20 @@ extension PortForwarding {
 		return logger
 	}
 
+	func bind() -> EventLoopFuture<Channel> {
 		let server: EventLoopFuture<any Channel> = bootstrap.bind(to: self.bindAddress)
 
 		server.whenComplete({ (result: Result<any Channel, Error>) in
-			let logger = Logger(label: "com.aldunelabs.portforwarder.PortForwarding")
-
 			switch result {
 			case let .success(channel):
+				self.setChannel(channel)
 				Self.Log(type(of: self)).info("Listening on \(String(describing: channel.localAddress))")
 			case let .failure(error):
 				Self.Log(type(of: self)).error("Failed to bind \(self.bindAddress), \(error)")
 			}
 		})
 
-		return server.flatMap {
-			self.setChannel($0)
-			return $0.closeFuture
-		}
+		return server
     }
 
     func close() -> EventLoopFuture<Void> {
