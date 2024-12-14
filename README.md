@@ -30,11 +30,11 @@ DNS port forwarding
 let remoteHost = "8.8.8.8"
 let mappedPorts = [
     MappedPort(host: 1053, guest: 53, proto: .udp),
-    MappedPort(host: 1053, guest: 443, proto: .tcp)
+    MappedPort(host: 1053, guest: 53, proto: .tcp)
 ]
-let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "0.0.0.0")
+let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "0.0.0.0", udpConnectionTTL: 5)
 
-let _ = try pfw.bind()?.wait()
+let _ = try pfw.bind().wait()
 
 ```
 
@@ -45,8 +45,8 @@ let remoteHost = "8.8.8.8"
 let mappedPorts = [
     MappedPort(host: 1053, guest: 53, proto: .both),
 ]
-let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "0.0.0.0")
+let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "0.0.0.0", udpConnectionTTL: 5)
 
-let _ = try pfw.bind()?.wait()
+let _ = try pfw.bind().wait()
 
 ```
