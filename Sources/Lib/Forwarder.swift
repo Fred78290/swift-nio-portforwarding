@@ -70,7 +70,7 @@ public class PortForwarder {
 		try? self.group.syncShutdownGracefully()
 	}
 
-	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1") throws {
+	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) throws {
 		self.remoteHost = remoteHost
 		self.mappedPorts = mappedPorts
 		self.bindAddress = bindAddress
@@ -86,19 +86,19 @@ public class PortForwarder {
 					serverBootstrap.append(TCPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
 				case .both:
 					serverBootstrap.append(TCPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
-					serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
+					serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
 				default:
-					serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
+					serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
 			}
 
 			return serverBootstrap
 		}
 	}
 
-	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1") throws {
+	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) throws {
 		let group = MultiThreadedEventLoopGroup(numberOfThreads: mappedPorts.count)
 
-		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "127.0.0.1")
+		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: bindAddress, udpConnectionTTL: udpConnectionTTL)
 	}
 
 	public func close() -> EventLoopFuture<Void> {

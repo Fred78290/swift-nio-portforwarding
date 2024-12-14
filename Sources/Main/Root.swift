@@ -63,6 +63,9 @@ struct Root: ParsableCommand {
 	@Option(name: [.customLong("forward"), .customShort("f")], help: ArgumentHelp("forwarded port for host", valueName: "host:guest/(tcp|udp|both)"))
 	public var forwardedPorts: [ForwardedPort] = []
 
+	@Option(name: [.customLong("ttl"), .customShort("t")], help: "TTL for UDP relay connection in seconds")
+	public var udpTTL: Int = 5
+
 	@Flag(help: "debug log")
 	public var debug: Bool = false
 
@@ -81,7 +84,7 @@ struct Root: ParsableCommand {
 	}
 
 	mutating func run() throws {
-		let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "0.0.0.0")
+		let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "0.0.0.0", udpConnectionTTL: udpTTL)
 
 		try pfw.bind().wait()
 	}

@@ -12,9 +12,12 @@ final class UDPWrapperHandler: ChannelInboundHandler {
     public typealias InboundIn = AddressedEnvelope<ByteBuffer>
     public typealias OutboundOut = AddressedEnvelope<ByteBuffer>
 
-	let logger: Logger
+	let inboundChannel: Channel
+	let outboundChannel: Channel
+	let remoteAddress: SocketAddress
+	let ttl: Int
+
 	var last: Date
-	let channel: Channel
 	var task: RepeatedTask?
 
 	private static func Log() -> Logger {
@@ -30,14 +33,14 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 		}
 	}
 
-	init(remoteAddress: SocketAddress, channel: Channel) {
+	init(remoteAddress: SocketAddress, inboundChannel: Channel, outboundChannel: Channel, ttl: Int) {
 		self.last = .now
-		self.channel = channel
-		self.logger = Logger(label: "com.aldunelabs.portforwarder.UDPWrapperHandler")
+		self.inboundChannel = inboundChannel
+		self.outboundChannel = outboundChannel
 		self.task = nil
 		self.remoteAddress = remoteAddress
-
-		self.task = channel.eventLoop.scheduleRepeatedAsyncTask(initialDelay: TimeAmount.seconds(60),
+		self.ttl = ttl
+		self.task = inboundChannel.eventLoop.scheduleRepeatedAsyncTask(initialDelay: TimeAmount.seconds(Int64(ttl)),
 				delay: TimeAmount.seconds(1),
 				maximumAllowableJitter: TimeAmount.seconds(1),
 				notifying: nil, self.scheduled)
@@ -46,19 +49,17 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 	@Sendable private func scheduled(_ task: RepeatedTask) -> EventLoopFuture<Void> {
 		let dt: TimeInterval = Date.now.timeIntervalSince(self.last)
 
+		if dt > TimeInterval(self.ttl) {
 			if isDebugLog() {
 				Self.Log().debug("Close UDP tunnel \(self.inboundChannel) <--> \(self.remoteAddress)")
 			}
 
-			channel.close(promise: nil)
+			inboundChannel.close(promise: nil)
 
 			task.cancel()
 		}
 
-		return self.channel.eventLoop.makeSucceededFuture(())
-	}
-
-	func channelActive(context: ChannelHandlerContext) {
+		return self.inboundChannel.eventLoop.makeSucceededFuture(())
 	}
 
 	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -71,7 +72,7 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 
 		self.last = .now
 
-		context.writeAndFlush(self.wrapOutboundOut(envelope), promise: nil)
+		outboundChannel.writeAndFlush(self.wrapOutboundOut(envelope), promise: nil)
 	}
 
     public func errorCaught(context: ChannelHandlerContext, error: Error) {
@@ -86,7 +87,7 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 	public typealias OutboundOut = AddressedEnvelope<ByteBuffer>
 
 	let remoteAddress: SocketAddress
-	let logger: Logger
+	let ttl: Int
 	var task: RepeatedTask?
 
 	private static func Log() -> Logger {
@@ -98,12 +99,13 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 
 	init(remoteAddress: SocketAddress, ttl: Int) {
 		self.remoteAddress = remoteAddress
-		self.logger = Logger(label: "com.aldunelabs.portforwarder.InboundUDPWrapperHandler")
+		self.ttl = ttl
 	}
 
 	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
 		let envelope = self.unwrapInboundIn(data)
 		let eventLoop = context.eventLoop
+		let outboundChannel = context.channel
 
 		if isDebugLog() {
 			Self.Log().debug("received data from: \(envelope.remoteAddress)")
@@ -113,7 +115,10 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { inboundChannel in
 				let data: AddressedEnvelope<ByteBuffer> = AddressedEnvelope<ByteBuffer>(remoteAddress: self.remoteAddress, data: envelope.data)
-				let channelFuture = inboundChannel.pipeline.addHandler(UDPWrapperHandler(remoteAddress:envelope.remoteAddress, channel: inboundChannel))
+				let channelFuture = inboundChannel.pipeline.addHandler(UDPWrapperHandler(remoteAddress:envelope.remoteAddress,
+										inboundChannel: inboundChannel,
+										outboundChannel: outboundChannel,
+										ttl: self.ttl))
 
 				if isDebugLog() {
 					Self.Log().debug("forward data from: \(envelope.remoteAddress) to \(self.remoteAddress)")
@@ -162,7 +167,8 @@ final class UDPPortForwardingServer: PortForwarding {
 
 	init(group: EventLoopGroup,
 		bindAddress: SocketAddress,
-		remoteAddress: SocketAddress) {
+		remoteAddress: SocketAddress,
+		ttl: Int) {
 
 		self.group = group
 		self.serverLoop = group.next()
@@ -171,7 +177,7 @@ final class UDPPortForwardingServer: PortForwarding {
 		self.bootstrap = DatagramBootstrap(group: self.serverLoop)
 			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { inboundChannel in
-				inboundChannel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress))
+				inboundChannel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress, ttl: ttl))
 		}
 	}
 	
