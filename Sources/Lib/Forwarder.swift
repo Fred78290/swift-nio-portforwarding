@@ -101,12 +101,20 @@ public class PortForwarder {
 		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: bindAddress, udpConnectionTTL: udpConnectionTTL)
 	}
 
-	public func close() -> EventLoopFuture<Void> {
+	public func syncShutdownGracefully() throws {
 		let closed = self.serverBootstrap.map { bootstrap in
 			return bootstrap.close()
 		}
 
-		return EventLoopFuture.andAllComplete(closed, on: self.group.next())
+		try EventLoopFuture.andAllComplete(closed, on: self.group.next()).wait()
+	}
+
+	public func shutdownGracefully() async throws {
+		let closed = self.serverBootstrap.map { bootstrap in
+			return bootstrap.close()
+		}
+
+		try await EventLoopFuture.andAllComplete(closed, on: self.group.next()).get()
 	}
 
 	public func bind() -> PortForwarderClosure {
