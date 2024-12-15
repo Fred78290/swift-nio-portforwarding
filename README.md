@@ -1,5 +1,3 @@
-[![sswg:graduated|104x20](https://img.shields.io/badge/sswg-graduated-green.svg)](https://github.com/swift-server/sswg/blob/main/process/incubation.md#graduated-level)
-
 # SwiftNIO Port Forwarding
 
 SwiftNIO Port Forwarding is a package to create UDP/TCP port forwarding aka docker with SwiftNIO
