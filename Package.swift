@@ -3,6 +3,11 @@ import PackageDescription
 
 let package = Package(
 	name: "nio-port-forwarder",
+	platforms: [
+		.macOS(.v13),
+		.iOS(.v14),
+		.tvOS(.v14)
+	],
 	products: [
 		.library(name: "NIOPortForwarding", targets: ["NIOPortForwarding"]),
 		.executable(name: "nio-pfw", targets: ["PortForwarder"]),
