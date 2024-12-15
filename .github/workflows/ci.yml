@@ -30,11 +30,9 @@ jobs:
 
       - name: Run tests
         run: swift test -v
-  release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu
-    steps:
+
       - name: "Create release"
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
