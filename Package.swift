@@ -1,18 +1,4 @@
 // swift-tools-version:5.7
-//===----------------------------------------------------------------------===//
-//
-// This source file is part of the SwiftNIO open source project
-//
-// Copyright (c) 2019 Apple Inc. and the SwiftNIO project authors
-// Licensed under Apache License v2.0
-//
-// See LICENSE.txt for license information
-// See CONTRIBUTORS.txt for the list of SwiftNIO project authors
-//
-// SPDX-License-Identifier: Apache-2.0
-//
-//===----------------------------------------------------------------------===//
-
 import PackageDescription
 
 let package = Package(
@@ -22,9 +8,9 @@ let package = Package(
 		.executable(name: "nio-pfw", targets: ["PortForwarder"]),
 	],
 	dependencies: [
-		.package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.1"),
-		.package(url: "https://github.com/apple/swift-nio.git", from: "2.77.0"),
-		.package(url: "https://github.com/apple/swift-log.git", from: "1.6.2"),
+		.package(url: "https://github.com/apple/swift-argument-parser", .upToNextMajor(from: "1.5.0")),
+		.package(url: "https://github.com/apple/swift-nio.git", "2.60.0" ..< "3.0.0"),
+		.package(url: "https://github.com/apple/swift-log.git", "1.5.0" ..< "2.0.0"),
 	],
 	targets: [
 		.target(
