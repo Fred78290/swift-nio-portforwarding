@@ -60,7 +60,7 @@ struct Root: ParsableCommand {
 	@Argument(help: "Remote host forwarded port")
 	public var remoteHost: String = "localhost"
 
-	@Option(name: [.customLong("forward"), .customShort("f")], help: ArgumentHelp("forwarded port for host", valueName: "host:guest/(tcp|udp|both)"))
+	@Option(name: [.customLong("forward"), .customShort("f")], help: ArgumentHelp("Forwarded port for host", valueName: "host port:guest port/(tcp|udp|both)"))
 	public var forwardedPorts: [ForwardedPort] = []
 
 	@Option(name: [.customLong("ttl"), .customShort("t")], help: "TTL for UDP relay connection in seconds")
