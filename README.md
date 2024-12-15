@@ -1,3 +1,5 @@
+[![swift-nio-portforwarding](https://github.com/Fred78290/swift-nio-portforwarding/actions/workflows/ci.yml/badge.svg)](https://github.com/Fred78290/swift-nio-portforwarding/actions/workflows/ci.yml)
+
 # SwiftNIO Port Forwarding
 
 SwiftNIO Port Forwarding is a package to create UDP/TCP port forwarding aka docker with SwiftNIO
