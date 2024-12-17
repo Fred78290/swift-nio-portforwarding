@@ -25,29 +25,27 @@ public struct PortForwarderClosure {
 	let channels : [EventLoopFuture<Channel>]
 	private let on: EventLoop
 
+	public var closeFuture: EventLoopFuture<Void> {
+		get {
+			return EventLoopFuture.andAllComplete(self.channels.map { future in
+				future.flatMap { channel in
+					channel.closeFuture
+				}
+			}, on: on)
+		}
+	}
+
 	init(_ channels: [EventLoopFuture<Channel>], on: EventLoop) {
 		self.channels = channels
 		self.on = on
 	}
 
 	public func get() async throws {
-		let closing = self.channels.map { future in
-			future.flatMap { channel in
-				channel.closeFuture
-			}
-		}
-
-		try await EventLoopFuture.andAllComplete(closing, on: on).get()
+		try await self.closeFuture.get()
 	}
 
 	public func wait() throws {
-		let closing = self.channels.map { future in
-			future.flatMap { channel in
-				channel.closeFuture
-			}
-		}
-
-		try EventLoopFuture.andAllComplete(closing, on: on).wait()
+		try self.closeFuture.wait()
 	}
 }
 
