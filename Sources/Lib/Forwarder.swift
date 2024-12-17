@@ -70,7 +70,7 @@ public class PortForwarder {
 		try? self.group.syncShutdownGracefully()
 	}
 
-	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) throws {
+	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) {
 		self.remoteHost = remoteHost
 		self.mappedPorts = mappedPorts
 		self.bindAddress = bindAddress
@@ -95,10 +95,10 @@ public class PortForwarder {
 		}
 	}
 
-	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) throws {
+	public convenience init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) {
 		let group = MultiThreadedEventLoopGroup(numberOfThreads: mappedPorts.count)
 
-		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: bindAddress, udpConnectionTTL: udpConnectionTTL)
+		self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: bindAddress, udpConnectionTTL: udpConnectionTTL)
 	}
 
 	public func syncShutdownGracefully() throws {
