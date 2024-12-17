@@ -197,10 +197,10 @@ final class TCPForwardingTests: XCTestCase {
 		return server
 	}
 
-	func setupForwarder(host: String, port: Int, guest: Int) throws -> PortForwarder {
+	func setupForwarder(host: String, port: Int, guest: Int) -> PortForwarder {
 		Log(label: "TCPForwardingTests").info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
-		let portForwarder = try PortForwarder(group: self.group.next(),
+		let portForwarder = PortForwarder(group: self.group.next(),
 						remoteHost: host,
 						mappedPorts: [MappedPort(host: port, guest: guest, proto: .tcp)],
 						bindAddress: host)
@@ -222,7 +222,7 @@ final class TCPForwardingTests: XCTestCase {
 	}
 
 	func testTCPEchoForwarding() async throws {
-		let forwarder = try assertNoThrowWithValue(self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort))
+		let forwarder = self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
 
 		_ = try assertNoThrowWithValue(forwarder.bind())
 

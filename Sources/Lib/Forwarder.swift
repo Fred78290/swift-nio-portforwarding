@@ -53,7 +53,7 @@ public struct PortForwarderClosure {
 
 public class PortForwarder {
 	let group: EventLoopGroup
-	let bindAddress: String
+	let bindAddresses: [String]
 	let mappedPorts: [MappedPort]
 	let remoteHost: String
 	let serverBootstrap: [PortForwarding]
@@ -70,35 +70,46 @@ public class PortForwarder {
 		try? self.group.syncShutdownGracefully()
 	}
 
-	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) throws {
+	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) {
 		self.remoteHost = remoteHost
 		self.mappedPorts = mappedPorts
-		self.bindAddress = bindAddress
-		self.group = group
-		
-		self.serverBootstrap = mappedPorts.reduce([]) { serverBootstrap, mappedPort in
-			var serverBootstrap = serverBootstrap
-			let bindAddress = try! SocketAddress.makeAddressResolvingHost(bindAddress, port: mappedPort.host)
-			let remoteAddress = try! SocketAddress.makeAddressResolvingHost(remoteHost, port: mappedPort.guest)
+		self.bindAddresses = bindAddresses
+		self.group = group		
+		self.serverBootstrap = bindAddresses.reduce([]) { serverBootstrap, bindAddress in
+			return mappedPorts.reduce(serverBootstrap) { serverBootstrap, mappedPort in
+				var serverBootstrap = serverBootstrap
+				let bindAddress = try! SocketAddress.makeAddressResolvingHost(bindAddress, port: mappedPort.host)
+				let remoteAddress = try! SocketAddress.makeAddressResolvingHost(remoteHost, port: mappedPort.guest)
 
-			switch mappedPort.proto {
-				case .tcp:
-					serverBootstrap.append(TCPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
-				case .both:
-					serverBootstrap.append(TCPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
-					serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
-				default:
-					serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
+				switch mappedPort.proto {
+					case .tcp:
+						serverBootstrap.append(TCPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
+					case .both:
+						serverBootstrap.append(TCPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
+						serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
+					default:
+						serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
+				}
+
+				return serverBootstrap
 			}
-
-			return serverBootstrap
 		}
 	}
 
-	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) throws {
+	public convenience init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) {
+		self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: [bindAddress], udpConnectionTTL: udpConnectionTTL)
+	}
+
+	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) {
 		let group = MultiThreadedEventLoopGroup(numberOfThreads: mappedPorts.count)
 
-		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: bindAddress, udpConnectionTTL: udpConnectionTTL)
+		self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: bindAddresses, udpConnectionTTL: udpConnectionTTL)
+	}
+
+	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) {
+		let group = MultiThreadedEventLoopGroup(numberOfThreads: mappedPorts.count)
+
+		self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: [bindAddress], udpConnectionTTL: udpConnectionTTL)
 	}
 
 	public func syncShutdownGracefully() throws {
