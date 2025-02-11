@@ -1,7 +1,7 @@
 import ArgumentParser
 import Foundation
 
-public struct ForwardedPort: Codable {
+public struct ForwardedPort: Sendable, Codable {
 	public var proto: MappedPort.Proto = .tcp
 	public var host: Int = -1
 	public var guest: Int = -1

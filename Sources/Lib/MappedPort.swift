@@ -1,5 +1,5 @@
-public struct MappedPort: Codable {
-	public enum Proto: String, Codable {
+public struct MappedPort: Sendable, Codable {
+	public enum Proto: String, Sendable, Codable {
 		case tcp
 		case udp
 		case both
