@@ -159,22 +159,20 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 
 final class UDPPortForwardingServer: PortForwarding {
 	let bootstrap: Bindable
-	let serverLoop: EventLoop
-	let group: EventLoopGroup
+	let eventLoop: EventLoop
 	let bindAddress: SocketAddress
 	let remoteAddress: SocketAddress
 	var channel: Channel?
 
-	init(group: EventLoopGroup,
+	init(on: EventLoop,
 		bindAddress: SocketAddress,
 		remoteAddress: SocketAddress,
 		ttl: Int) {
 
-		self.group = group
-		self.serverLoop = group.next()
+		self.eventLoop = on
 		self.bindAddress = bindAddress
 		self.remoteAddress = remoteAddress
-		self.bootstrap = DatagramBootstrap(group: self.serverLoop)
+		self.bootstrap = DatagramBootstrap(group: on)
 			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { inboundChannel in
 				inboundChannel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress, ttl: ttl))

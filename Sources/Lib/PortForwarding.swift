@@ -13,8 +13,7 @@ public protocol PortForwarding {
 	var remoteAddress: SocketAddress { get }
 	var bindAddress: SocketAddress { get }
 	var channel: Channel? { get }
-    var serverLoop: EventLoop { get }
-    var group: EventLoopGroup { get }
+    var eventLoop: EventLoop { get }
 	
 	func setChannel(_ channel: Channel)
 	func bind() -> EventLoopFuture<Channel>
@@ -47,10 +46,10 @@ extension PortForwarding {
     }
 
     func close() -> EventLoopFuture<Void> {
-		return self.serverLoop.flatSubmit {
+		return self.eventLoop.flatSubmit {
 			guard let channel = self.channel else {
 				// The server wasn't created yet, so we can just shut down straight away and let the OS clean us up.
-				return self.serverLoop.makeSucceededFuture(())
+				return self.eventLoop.makeSucceededFuture(())
 			}
 
 			Self.Log(type(of: self)).info("Close on \(String(describing: channel.localAddress))")

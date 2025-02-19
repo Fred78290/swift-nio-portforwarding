@@ -43,8 +43,7 @@ final class TCPWrapperHandler: ChannelDuplexHandler {
 
 final class TCPPortForwardingServer: PortForwarding {
 	let bootstrap: Bindable
-    let serverLoop: EventLoop
-	let group: EventLoopGroup
+    let eventLoop: EventLoop
 	let bindAddress: SocketAddress
 	let remoteAddress: SocketAddress
 	var channel: Channel?
@@ -56,13 +55,12 @@ final class TCPPortForwardingServer: PortForwarding {
 		return logger
 	}
 
-	init(group: EventLoopGroup, bindAddress: SocketAddress, remoteAddress: SocketAddress) {
+	init(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) {
 
-		self.group = group
-		self.serverLoop = group.next()
+		self.eventLoop = on
 		self.bindAddress = bindAddress
 		self.remoteAddress = remoteAddress
-		self.bootstrap = ServerBootstrap(group: self.serverLoop)
+		self.bootstrap = ServerBootstrap(group: on)
 			.serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.childChannelInitializer { inboundChannel in

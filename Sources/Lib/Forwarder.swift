@@ -76,17 +76,18 @@ public class PortForwarder {
 		self.serverBootstrap = bindAddresses.reduce([]) { serverBootstrap, bindAddress in
 			return mappedPorts.reduce(serverBootstrap) { serverBootstrap, mappedPort in
 				var serverBootstrap = serverBootstrap
+				let eventLoop = group.next()
 				let bindAddress = try! SocketAddress.makeAddressResolvingHost(bindAddress, port: mappedPort.host)
 				let remoteAddress = try! SocketAddress.makeAddressResolvingHost(remoteHost, port: mappedPort.guest)
 
 				switch mappedPort.proto {
 					case .tcp:
-						serverBootstrap.append(TCPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
+						serverBootstrap.append(TCPPortForwardingServer(on: eventLoop, bindAddress: bindAddress, remoteAddress: remoteAddress))
 					case .both:
-						serverBootstrap.append(TCPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress))
-						serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
+						serverBootstrap.append(TCPPortForwardingServer(on: eventLoop, bindAddress: bindAddress, remoteAddress: remoteAddress))
+						serverBootstrap.append(UDPPortForwardingServer(on: eventLoop, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
 					default:
-						serverBootstrap.append(UDPPortForwardingServer(group: group, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
+						serverBootstrap.append(UDPPortForwardingServer(on: eventLoop, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
 				}
 
 				return serverBootstrap
