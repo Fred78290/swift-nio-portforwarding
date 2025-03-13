@@ -12,6 +12,10 @@ public struct ForwardedPort: Sendable, Codable {
 }
 
 extension ForwardedPort: CustomStringConvertible, ExpressibleByArgument {
+	public var defaultValueDescription: String {
+		"<host>[:<guest>[/tcp|udp|both]]"
+	}
+
 	public var description: String {
 		"\(host):\(guest)/\(proto)"
 	}
