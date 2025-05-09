@@ -56,31 +56,37 @@ public class TCPPortForwardingServer: PortForwarding {
 	}
 
 	public init(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) {
+		let bootstrap = ServerBootstrap(group: on)
 
 		self.eventLoop = on
 		self.bindAddress = bindAddress
 		self.remoteAddress = remoteAddress
-		self.bootstrap = ServerBootstrap(group: on)
-			.serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+		self.bootstrap = bootstrap
+
+		_ = bootstrap.serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.childChannelInitializer { inboundChannel in
+				return self.childChannelInitializer(channel: inboundChannel)
+			}
+	}
+
+	internal func childChannelInitializer(channel: Channel) -> EventLoopFuture<Void> {
+		if isDebugLog() {
+			Self.Log().debug("connection from: \(String(describing: channel.remoteAddress))")
+		}
+
+		return ClientBootstrap(group: channel.eventLoop)
+			.connect(to: remoteAddress)
+			.flatMap { childChannel in
+				let (ours, theirs) = GlueHandler.matchedPair()
+
 				if isDebugLog() {
-					Self.Log().debug("connection from: \(String(describing: inboundChannel.remoteAddress))")
+					Self.Log().debug("connected to: \(String(describing: childChannel.remoteAddress))")
 				}
 
-				return ClientBootstrap(group: inboundChannel.eventLoop)
-					.connect(to: remoteAddress)
-					.flatMap { childChannel in
-						let (ours, theirs) = GlueHandler.matchedPair()
-
-						if isDebugLog() {
-							Self.Log().debug("connected to: \(String(describing: childChannel.remoteAddress))")
-						}
-
-						return childChannel.pipeline.addHandlers([TCPWrapperHandler(), ours, ErrorHandler()]).flatMap {
-							inboundChannel.pipeline.addHandlers([theirs, ErrorHandler()])
-						}
-					}
+				return childChannel.pipeline.addHandlers([TCPWrapperHandler(), ours, ErrorHandler()]).flatMap {
+					channel.pipeline.addHandlers([theirs, ErrorHandler()])
+				}
 			}
 	}
 
