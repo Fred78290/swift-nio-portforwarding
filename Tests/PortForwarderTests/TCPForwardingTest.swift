@@ -190,10 +190,10 @@ final class TCPForwardingTests: XCTestCase {
 
 		server.whenComplete { result in
 			switch result {
-				case let .success(channel):
-					Log(label: "TCPForwardingTests").info("server complete successed: \(String(describing: channel.localAddress))")
-				case let .failure(error):
-					Log(label: "TCPForwardingTests").info("server complete failed: \(error.localizedDescription)")
+			case let .success(channel):
+				Log(label: "TCPForwardingTests").info("server complete successed: \(String(describing: channel.localAddress))")
+			case let .failure(error):
+				Log(label: "TCPForwardingTests").info("server complete failed: \(error.localizedDescription)")
 			}
 		}
 
@@ -205,12 +205,14 @@ final class TCPForwardingTests: XCTestCase {
 
 		return self.setupEchoServer(to: try SocketAddress.makeAddressResolvingHost(host, port: port))
 	}
+
+	func setupForwarder(host: String, port: Int, guest: Int) throws -> PortForwarder {
 		Log(label: "TCPForwardingTests").info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
-		let portForwarder = PortForwarder(group: self.group.next(),
-						remoteHost: host,
-						mappedPorts: [MappedPort(host: port, guest: guest, proto: .tcp)],
-						bindAddress: host)
+		let portForwarder = try PortForwarder(group: self.group.next(),
+		                                      remoteHost: host,
+		                                      mappedPorts: [MappedPort(host: port, guest: guest, proto: .tcp)],
+		                                      bindAddress: host)
 
 		self.portForwarder = portForwarder
 
