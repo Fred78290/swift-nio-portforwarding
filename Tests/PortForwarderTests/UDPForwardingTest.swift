@@ -170,7 +170,7 @@ final class UDPForwardingTests: XCTestCase {
 	func setupForwarder(host: String, port: Int, guest: Int) throws -> PortForwarder {
 		self.logger.info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
-		let portForwarder = try PortForwarder(group: self.group.next(),
+		let portForwarder = try PortForwarder(group: self.group,
 						remoteHost: host,
 						mappedPorts: [MappedPort(host: port, guest: guest, proto: .udp)],
 						bindAddress: host)
