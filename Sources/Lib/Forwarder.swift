@@ -1,8 +1,27 @@
+import Foundation
 import Dispatch
 import Logging
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+
+extension SocketAddress {
+	public static func makeAddress(_ remoteAddress: String) throws -> SocketAddress {
+		let socketAddress: SocketAddress
+
+		guard let u = URL(string: remoteAddress) else {
+			throw PortForwardingError.unsupportedProtocol("Invalid remote address \(remoteAddress)")
+		}
+
+		if u.scheme == "unix" || u.isFileURL {
+			socketAddress = try .init(unixDomainSocketPath: u.path)
+		} else {
+			socketAddress = try self.makeAddressResolvingHost(u.host!, port: u.port ?? 0)
+		}
+
+		return socketAddress
+	}
+}
 
 public var portForwarderLogLevel = Logger.Level.info
 
@@ -50,13 +69,10 @@ public struct PortForwarderClosure {
 }
 
 public class PortForwarder {
-	let group: EventLoopGroup
-	let bindAddresses: [String]
-	let mappedPorts: [MappedPort]
-	let remoteHost: String
-	let serverBootstrap: [PortForwarding]
+	internal let group: EventLoopGroup
+	internal var serverBootstrap: [PortForwarding] = []
 
-	private static func Log() -> Logger {
+	internal static func Log() -> Logger {
 		var logger = Logger(label: "com.aldunelabs.portforwarder.PortForwardingServer")
 
 		logger.logLevel = portForwarderLogLevel
@@ -68,30 +84,22 @@ public class PortForwarder {
 		try? self.group.syncShutdownGracefully()
 	}
 
-	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) {
-		self.remoteHost = remoteHost
-		self.mappedPorts = mappedPorts
-		self.bindAddresses = bindAddresses
-		self.group = group		
-		self.serverBootstrap = bindAddresses.reduce([]) { serverBootstrap, bindAddress in
-			return mappedPorts.reduce(serverBootstrap) { serverBootstrap, mappedPort in
+	public init(group: EventLoopGroup, remoteAddress: SocketAddress, bindAddress: SocketAddress, proto: MappedPort.Proto, udpConnectionTTL: Int = 5) throws {
+		self.group = group
+
+		self.createPortForwardingServer(on: group.next(), bindAddress: bindAddress, remoteAddress: remoteAddress, proto: proto, ttl: udpConnectionTTL)
+	}
+
 	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) throws {
-				var serverBootstrap = serverBootstrap
-				let eventLoop = group.next()
-				let bindAddress = try! SocketAddress.makeAddressResolvingHost(bindAddress, port: mappedPort.host)
-				let remoteAddress = try! SocketAddress.makeAddressResolvingHost(remoteHost, port: mappedPort.guest)
+		self.group = group
 
-				switch mappedPort.proto {
-					case .tcp:
-						serverBootstrap.append(TCPPortForwardingServer(on: eventLoop, bindAddress: bindAddress, remoteAddress: remoteAddress))
-					case .both:
-						serverBootstrap.append(TCPPortForwardingServer(on: eventLoop, bindAddress: bindAddress, remoteAddress: remoteAddress))
-						serverBootstrap.append(UDPPortForwardingServer(on: eventLoop, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
-					default:
-						serverBootstrap.append(UDPPortForwardingServer(on: eventLoop, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: udpConnectionTTL))
-				}
-
-				return serverBootstrap
+		try bindAddresses.forEach { bindAddress in
+			try mappedPorts.forEach { mappedPort in
+				self.createPortForwardingServer(on: group.next(),
+				                                bindAddress: try SocketAddress.makeAddress("tcp://\(bindAddress):\(mappedPort.host)"),
+				                                remoteAddress: try SocketAddress.makeAddress("tcp://\(remoteHost):\(mappedPort.guest)"),
+				                                proto: mappedPort.proto,
+				                                ttl: udpConnectionTTL)
 			}
 		}
 	}
@@ -150,5 +158,25 @@ public class PortForwarder {
 		}
 
 		return PortForwarderClosure(channels, on: self.group.next())
+	}
+
+	public func createPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, proto: MappedPort.Proto, ttl: Int) {
+		switch proto {
+		case .tcp:
+			serverBootstrap.append(self.createTCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress))
+		case .both:
+			serverBootstrap.append(self.createTCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress))
+			serverBootstrap.append(self.createUDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl))
+		default:
+			serverBootstrap.append(self.createUDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl))
+		}
+	}
+
+	public func createTCPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) -> TCPPortForwardingServer {
+		return TCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress)
+	}
+
+	public func createUDPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, ttl: Int) -> UDPPortForwardingServer {
+		return UDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl)
 	}
 }
