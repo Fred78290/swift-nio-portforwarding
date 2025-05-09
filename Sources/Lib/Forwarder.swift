@@ -75,6 +75,7 @@ public class PortForwarder {
 		self.group = group		
 		self.serverBootstrap = bindAddresses.reduce([]) { serverBootstrap, bindAddress in
 			return mappedPorts.reduce(serverBootstrap) { serverBootstrap, mappedPort in
+	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) throws {
 				var serverBootstrap = serverBootstrap
 				let eventLoop = group.next()
 				let bindAddress = try! SocketAddress.makeAddressResolvingHost(bindAddress, port: mappedPort.host)
@@ -95,20 +96,20 @@ public class PortForwarder {
 		}
 	}
 
-	public convenience init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) {
-		self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: [bindAddress], udpConnectionTTL: udpConnectionTTL)
+	public convenience init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) throws {
+		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: [bindAddress], udpConnectionTTL: udpConnectionTTL)
 	}
 
-	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) {
+	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) throws {
 		let group = MultiThreadedEventLoopGroup(numberOfThreads: mappedPorts.count)
 
-		self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: bindAddresses, udpConnectionTTL: udpConnectionTTL)
+		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: bindAddresses, udpConnectionTTL: udpConnectionTTL)
 	}
 
-	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) {
+	public convenience init(remoteHost: String, mappedPorts: [MappedPort], bindAddress: String = "127.0.0.1", udpConnectionTTL: Int = 5) throws {
 		let group = MultiThreadedEventLoopGroup(numberOfThreads: mappedPorts.count)
 
-		self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: [bindAddress], udpConnectionTTL: udpConnectionTTL)
+		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: [bindAddress], udpConnectionTTL: udpConnectionTTL)
 	}
 
 	public func syncShutdownGracefully() throws {

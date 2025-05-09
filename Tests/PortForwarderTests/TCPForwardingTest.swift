@@ -231,7 +231,7 @@ final class TCPForwardingTests: XCTestCase {
 	}
 
 	func testTCPEchoForwarding() async throws {
-		let forwarder = self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
+		let forwarder = try self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
 
 		_ = try assertNoThrowWithValue(forwarder.bind())
 
