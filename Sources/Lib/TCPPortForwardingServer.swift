@@ -41,21 +41,21 @@ final class TCPWrapperHandler: ChannelDuplexHandler {
 	}
 }
 
-final class TCPPortForwardingServer: PortForwarding {
-	let bootstrap: Bindable
-    let eventLoop: EventLoop
-	let bindAddress: SocketAddress
-	let remoteAddress: SocketAddress
-	var channel: Channel?
+public class TCPPortForwardingServer: PortForwarding {
+	public let bootstrap: Bindable
+	public let eventLoop: EventLoop
+	public let bindAddress: SocketAddress
+	public let remoteAddress: SocketAddress
+	public var channel: Channel?
 
-	private static func Log() -> Logger {
+	internal static func Log() -> Logger {
 		var logger = Logger(label: "com.aldunelabs.portforwarder.TCPPortForwardingServer")
 		logger.logLevel = portForwarderLogLevel
 
 		return logger
 	}
 
-	init(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) {
+	public init(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) {
 
 		self.eventLoop = on
 		self.bindAddress = bindAddress
@@ -84,7 +84,7 @@ final class TCPPortForwardingServer: PortForwarding {
 			}
 	}
 
-	func setChannel(_ channel: any NIOCore.Channel) {
+	public func setChannel(_ channel: any NIOCore.Channel) {
 		self.channel = channel
 	}
 }

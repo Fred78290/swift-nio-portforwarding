@@ -8,9 +8,9 @@ extension DatagramBootstrap: Bindable {
 
 }
 
-final class UDPWrapperHandler: ChannelInboundHandler {
-    public typealias InboundIn = AddressedEnvelope<ByteBuffer>
-    public typealias OutboundOut = AddressedEnvelope<ByteBuffer>
+public class UDPWrapperHandler: ChannelInboundHandler {
+	public typealias InboundIn = AddressedEnvelope<ByteBuffer>
+	public typealias OutboundOut = AddressedEnvelope<ByteBuffer>
 
 	let inboundChannel: Channel
 	let outboundChannel: Channel
@@ -20,7 +20,7 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 	var last: Date
 	var task: RepeatedTask?
 
-	private static func Log() -> Logger {
+	internal static func Log() -> Logger {
 		var logger = Logger(label: "com.aldunelabs.portforwarder.UDPWrapperHandler")
 		logger.logLevel = portForwarderLogLevel
 
@@ -33,7 +33,7 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 		}
 	}
 
-	init(remoteAddress: SocketAddress, inboundChannel: Channel, outboundChannel: Channel, ttl: Int) {
+	public init(remoteAddress: SocketAddress, inboundChannel: Channel, outboundChannel: Channel, ttl: Int) {
 		self.last = .now
 		self.inboundChannel = inboundChannel
 		self.outboundChannel = outboundChannel
@@ -62,7 +62,7 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 		return self.inboundChannel.eventLoop.makeSucceededFuture(())
 	}
 
-	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+	public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
 		let data = self.unwrapInboundIn(data)
 		let envelope = AddressedEnvelope<ByteBuffer>(remoteAddress: self.remoteAddress, data: data.data)
 
@@ -75,14 +75,14 @@ final class UDPWrapperHandler: ChannelInboundHandler {
 		outboundChannel.writeAndFlush(self.wrapOutboundOut(envelope), promise: nil)
 	}
 
-    public func errorCaught(context: ChannelHandlerContext, error: Error) {
+	public func errorCaught(context: ChannelHandlerContext, error: Error) {
 		Self.Log().error("Error in tunnel: \(self.outboundChannel) <--> \(self.remoteAddress), \(error)")
 
 		context.close(promise: nil)
-    }
+	}
 }
 
-final class InboundUDPWrapperHandler: ChannelInboundHandler {
+public class InboundUDPWrapperHandler: ChannelInboundHandler {
 	public typealias InboundIn = AddressedEnvelope<ByteBuffer>
 	public typealias OutboundOut = AddressedEnvelope<ByteBuffer>
 
@@ -90,19 +90,19 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 	let ttl: Int
 	var task: RepeatedTask?
 
-	private static func Log() -> Logger {
+	internal static func Log() -> Logger {
 		var logger = Logger(label: "com.aldunelabs.portforwarder.InboundUDPWrapperHandler")
 		logger.logLevel = portForwarderLogLevel
 
 		return logger
 	}
 
-	init(remoteAddress: SocketAddress, ttl: Int) {
+	public init(remoteAddress: SocketAddress, ttl: Int) {
 		self.remoteAddress = remoteAddress
 		self.ttl = ttl
 	}
 
-	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+	public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
 		let envelope = self.unwrapInboundIn(data)
 		let eventLoop = context.eventLoop
 		let outboundChannel = context.channel
@@ -157,17 +157,17 @@ final class InboundUDPWrapperHandler: ChannelInboundHandler {
 
 }
 
-final class UDPPortForwardingServer: PortForwarding {
-	let bootstrap: Bindable
-	let eventLoop: EventLoop
-	let bindAddress: SocketAddress
-	let remoteAddress: SocketAddress
-	var channel: Channel?
+public class UDPPortForwardingServer: PortForwarding {
+	public let bootstrap: Bindable
+	public let eventLoop: EventLoop
+	public let bindAddress: SocketAddress
+	public let remoteAddress: SocketAddress
+	public var channel: Channel?
 
-	init(on: EventLoop,
-		bindAddress: SocketAddress,
-		remoteAddress: SocketAddress,
-		ttl: Int) {
+	public init(on: EventLoop,
+	            bindAddress: SocketAddress,
+	            remoteAddress: SocketAddress,
+	            ttl: Int) {
 
 		self.eventLoop = on
 		self.bindAddress = bindAddress
@@ -179,7 +179,7 @@ final class UDPPortForwardingServer: PortForwarding {
 		}
 	}
 	
-	func setChannel(_ channel: any NIOCore.Channel) {
+	public func setChannel(_ channel: any NIOCore.Channel) {
 		self.channel = channel
 	}
 }
