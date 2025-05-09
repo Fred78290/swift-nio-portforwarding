@@ -6,6 +6,7 @@ import NIOPosix
 
 enum PortForwardingError: Error {
 	case unimplementedProtocol
+	case unsupportedProtocol(String)
 }
 
 public protocol PortForwarding {
