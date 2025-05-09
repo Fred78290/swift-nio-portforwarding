@@ -41,9 +41,9 @@ public class UDPWrapperHandler: ChannelInboundHandler {
 		self.remoteAddress = remoteAddress
 		self.ttl = ttl
 		self.task = inboundChannel.eventLoop.scheduleRepeatedAsyncTask(initialDelay: TimeAmount.seconds(Int64(ttl)),
-				delay: TimeAmount.seconds(1),
-				maximumAllowableJitter: TimeAmount.seconds(1),
-				notifying: nil, self.scheduled)
+		                                                               delay: TimeAmount.seconds(1),
+		                                                               maximumAllowableJitter: TimeAmount.seconds(1),
+		                                                               notifying: nil, self.scheduled)
 	}
 
 	@Sendable private func scheduled(_ task: RepeatedTask) -> EventLoopFuture<Void> {
@@ -116,9 +116,9 @@ public class InboundUDPWrapperHandler: ChannelInboundHandler {
 			.channelInitializer { inboundChannel in
 				let data: AddressedEnvelope<ByteBuffer> = AddressedEnvelope<ByteBuffer>(remoteAddress: self.remoteAddress, data: envelope.data)
 				let channelFuture = inboundChannel.pipeline.addHandler(UDPWrapperHandler(remoteAddress:envelope.remoteAddress,
-										inboundChannel: inboundChannel,
-										outboundChannel: outboundChannel,
-										ttl: self.ttl))
+				                                                                         inboundChannel: inboundChannel,
+				                                                                         outboundChannel: outboundChannel,
+				                                                                         ttl: self.ttl))
 
 				if isDebugLog() {
 					Self.Log().debug("forward data from: \(envelope.remoteAddress) to \(self.remoteAddress)")
@@ -127,10 +127,10 @@ public class InboundUDPWrapperHandler: ChannelInboundHandler {
 				inboundChannel.writeAndFlush(UDPWrapperHandler.wrapOutboundOut(data), promise: nil)
 
 				return channelFuture
-		}
+			}
 
 		let server = client.bind(host: "0.0.0.0", port: 0)
-		
+
 		server.whenComplete { result in
 			switch result {
 			case .success:
@@ -176,9 +176,9 @@ public class UDPPortForwardingServer: PortForwarding {
 			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { inboundChannel in
 				inboundChannel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress, ttl: ttl))
-		}
+			}
 	}
-	
+
 	public func setChannel(_ channel: any NIOCore.Channel) {
 		self.channel = channel
 	}
