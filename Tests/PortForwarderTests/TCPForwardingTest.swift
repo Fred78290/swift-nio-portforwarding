@@ -143,35 +143,38 @@ final class TCPForwardingTests: XCTestCase {
 		try! group.syncShutdownGracefully()
 	}
 
-	func setupEchoClient(host: String, serverPort: Int) -> EventLoopFuture<any Channel> {
-		Log(label: "TCPForwardingTests").info("Setup client: \(host), server: \(serverPort)")
-
+	func setupEchoClient(to address: SocketAddress) -> EventLoopFuture<any Channel> {
 		let echoClient = ClientBootstrap(group: group.next())
 			// Enable SO_REUSEADDR.
 			.channelOption(.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { channel in
-				channel.pipeline.addHandler(ClientEchoHandler(remoteAddress: try! SocketAddress.makeAddressResolvingHost(host, port: serverPort)))
+				channel.pipeline.addHandler(ClientEchoHandler(remoteAddress: address))
 			}
 
 		self.echoClient = echoClient
 
-		let client = echoClient.connect(host: host, port: serverPort)
+		let client = echoClient.connect(to: address)
 
 		client.whenComplete { result in
 			switch result {
-				case let .success(channel):
-					Log(label: "TCPForwardingTests").info("client complete successed: \(String(describing: channel.localAddress))")
-				case let .failure(error):
-					Log(label: "TCPForwardingTests").info("client complete failed: \(error.localizedDescription)")
+			case let .success(channel):
+				Log(label: "TCPForwardingTests").info("client complete successed: \(String(describing: channel.localAddress))")
+			case let .failure(error):
+				Log(label: "TCPForwardingTests").info("client complete failed: \(error.localizedDescription)")
 			}
 		}
 
 		return client
 	}
 
-	func setupEchoServer(host: String, port: Int) -> EventLoopFuture<any Channel> {
-		Log(label: "TCPForwardingTests").info("Setup server: \(host), listen: \(port)")
 
+	func setupEchoClient(host: String, serverPort: Int) throws -> EventLoopFuture<any Channel> {
+		Log(label: "TCPForwardingTests").info("Setup client: \(host), server: \(serverPort)")
+
+		return self.setupEchoClient(to: try SocketAddress.makeAddressResolvingHost(host, port: serverPort))
+	}
+
+	func setupEchoServer(to address: SocketAddress) -> EventLoopFuture<any Channel> {
 		let echoServer = ServerBootstrap(group: group.next())
 			// Enable SO_REUSEADDR.
 			.serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -183,7 +186,7 @@ final class TCPForwardingTests: XCTestCase {
 
 		self.echoServer = echoServer
 
-		let server: EventLoopFuture<any Channel> = echoServer.bind(host: host, port: port)
+		let server: EventLoopFuture<any Channel> = echoServer.bind(to: address)
 
 		server.whenComplete { result in
 			switch result {
@@ -197,7 +200,11 @@ final class TCPForwardingTests: XCTestCase {
 		return server
 	}
 
-	func setupForwarder(host: String, port: Int, guest: Int) -> PortForwarder {
+	func setupEchoServer(host: String, port: Int) throws -> EventLoopFuture<any Channel> {
+		Log(label: "TCPForwardingTests").info("Setup server: \(host), listen: \(port)")
+
+		return self.setupEchoServer(to: try SocketAddress.makeAddressResolvingHost(host, port: port))
+	}
 		Log(label: "TCPForwardingTests").info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
 		let portForwarder = PortForwarder(group: self.group.next(),

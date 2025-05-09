@@ -139,9 +139,7 @@ final class UDPForwardingTests: XCTestCase {
 		return client
 	}
 
-	func setupEchoServer(host: String, port: Int) -> EventLoopFuture<Channel> {
-		self.logger.info("Setup server: \(host), listen: \(port)")
-
+	func setupEchoServer(to address: SocketAddress) -> EventLoopFuture<Channel> {
 		let echoServer = DatagramBootstrap(group: group.next())
 			// Enable SO_REUSEADDR.
 			.channelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -149,7 +147,7 @@ final class UDPForwardingTests: XCTestCase {
 				channel.pipeline.addHandler(ServerEchoHandler())
 			}
 
-		let server: EventLoopFuture<any Channel> = echoServer.bind(host: host, port: port)
+		let server: EventLoopFuture<any Channel> = echoServer.bind(to: address)
 
 		server.whenComplete { result in
 			switch result {
@@ -163,7 +161,13 @@ final class UDPForwardingTests: XCTestCase {
 		return server
 	}
 
-	func setupForwarder(host: String, port: Int, guest: Int) -> PortForwarder {
+	func setupEchoServer(host: String, port: Int) throws -> EventLoopFuture<Channel> {
+		self.logger.info("Setup server: \(host), listen: \(port)")
+
+		return self.setupEchoServer(to: try SocketAddress.makeAddressResolvingHost(host, port: port))
+	}
+
+	func setupForwarder(host: String, port: Int, guest: Int) throws -> PortForwarder {
 		self.logger.info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
 		let portForwarder = PortForwarder(group: self.group.next(),
