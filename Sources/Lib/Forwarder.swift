@@ -11,12 +11,12 @@ func isDebugLog() -> Bool {
 }
 
 final class ErrorHandler: ChannelInboundHandler {
-    typealias InboundIn = Any
+	typealias InboundIn = Any
 
-    func errorCaught(context: ChannelHandlerContext, error: Error) {
-        print("Error in pipeline: \(error)")
-        context.close(promise: nil)
-    }
+	func errorCaught(context: ChannelHandlerContext, error: Error) {
+		print("Error in pipeline: \(error)")
+		context.close(promise: nil)
+	}
 }
 
 public typealias ChannelResults = [Result<Void, any Error>]
@@ -139,7 +139,7 @@ public class PortForwarder {
 				case .failure:
 					let _ = result.mapError{
 						Self.Log().error("\(type(of: bootstrap)): bind failed: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress), reason: \($0)")
-						
+
 						return $0
 					}
 				}
