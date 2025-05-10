@@ -47,6 +47,7 @@ public class TCPPortForwardingServer: PortForwarding {
 	public let bindAddress: SocketAddress
 	public let remoteAddress: SocketAddress
 	public var channel: Channel?
+	public var proto: MappedPort.Proto { return .tcp }
 
 	internal static func Log() -> Logger {
 		var logger = Logger(label: "com.aldunelabs.portforwarder.TCPPortForwardingServer")

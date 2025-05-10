@@ -7,10 +7,14 @@ import NIOPosix
 enum PortForwardingError: Error {
 	case unimplementedProtocol
 	case unsupportedProtocol(String)
+	case alreadyBinded(String)
+	case closePending
+	case notFound(String)
 }
 
-public protocol PortForwarding {
+public protocol PortForwarding: Equatable {
 	var bootstrap: Bindable { get }
+	var proto: MappedPort.Proto { get }
 	var remoteAddress: SocketAddress { get }
 	var bindAddress: SocketAddress { get }
 	var channel: Channel? { get }
@@ -19,6 +23,14 @@ public protocol PortForwarding {
 	func setChannel(_ channel: Channel)
 	func bind() -> EventLoopFuture<Channel>
 	func close() -> EventLoopFuture<Void>
+}
+
+extension PortForwarding {
+	public static func == (lhs: Self, rhs: Self) -> Bool {
+		return lhs.bindAddress == rhs.bindAddress
+			&& lhs.remoteAddress == rhs.remoteAddress
+			&& lhs.proto == rhs.proto
+	}
 }
 
 extension PortForwarding {

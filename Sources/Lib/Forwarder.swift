@@ -4,6 +4,7 @@ import Logging
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+import Atomics
 
 extension SocketAddress {
 	public static func makeAddress(_ remoteAddress: String) throws -> SocketAddress {
@@ -40,37 +41,118 @@ final class ErrorHandler: ChannelInboundHandler {
 
 public typealias ChannelResults = [Result<Void, any Error>]
 
-public struct PortForwarderClosure {
-	let channels : [EventLoopFuture<Channel>]
+public class PortForwarderClosure {
+	private var channels : [EventLoopFuture<Channel>]
 	private let on: EventLoop
-
-	public var closeFuture: EventLoopFuture<Void> {
-		get {
-			return EventLoopFuture.andAllComplete(self.channels.map { future in
-				future.flatMap { channel in
-					channel.closeFuture
-				}
-			}, on: on)
-		}
-	}
+	private var closing: Bool = false
+	private var closeFuture: EventLoopFuture<Void>
+	private let promise: EventLoopPromise<Void>
+	private let counter: ManagedAtomic<Int> = .init(0)
 
 	init(_ channels: [EventLoopFuture<Channel>], on: EventLoop) {
 		self.channels = channels
 		self.on = on
+		self.promise = on.makePromise(of: Void.self)
+		self.closeFuture = EventLoopFuture.andAllComplete(channels.map { $0.flatMap {  $0.closeFuture } }, on: on)
+
+		self.counter.wrappingIncrement(ordering: .relaxed)
+
+		self.closeFuture.whenComplete {
+			self.whenCloseComplete($0)
+		}
+	}
+
+	private func whenCloseComplete(_ result: Result<Void, Error>) {
+		let counter = self.counter.wrappingDecrementThenLoad(ordering: .relaxed)
+
+		if counter == 0 {
+			self.closing = true
+			self.promise.succeed(())
+		}
+	}
+
+	public func appendChannel(_ channel: EventLoopFuture<Channel>) throws {
+		if self.closing {
+			throw PortForwardingError.closePending
+		}
+
+		self.channels.append(channel)
+
+		self.counter.wrappingIncrement(ordering: .relaxed)
+
+		self.closeFuture = self.closeFuture.flatMap {
+			channel.flatMap {
+				$0.closeFuture
+			}
+		}
+
+		self.closeFuture.whenComplete {
+			self.whenCloseComplete($0)
+		}
+	}
+
+	public func appendChannel(_ channels: [EventLoopFuture<Channel>]) throws {
+		if self.closing {
+			throw PortForwardingError.closePending
+		}
+
+		// Append the new channels to the port forwarder closure
+		self.channels.append(contentsOf: channels)
+
+		self.counter.wrappingIncrement(ordering: .relaxed)
+
+		// Update the close future to include the new channels
+		self.closeFuture = channels.reduce(self.closeFuture) { result, channel in
+			result.flatMap {
+				channel.flatMap {
+					$0.closeFuture
+				}
+			}
+		}
+
+		self.closeFuture.whenComplete {
+			self.whenCloseComplete($0)
+		}
 	}
 
 	public func get() async throws {
-		try await self.closeFuture.get()
+		try await self.promise.futureResult.get()
 	}
 
 	public func wait() throws {
-		try self.closeFuture.wait()
+		try self.promise.futureResult.wait()
+	}
+}
+
+public typealias PortForwardings = [any PortForwarding]
+
+
+extension PortForwardings {
+	public func bind() -> [EventLoopFuture<Channel>] {
+		self.map { bootstrap in
+			let result = bootstrap.bind()
+
+			result.whenComplete{ result in
+				switch result {
+				case .success:
+					PortForwarder.Log().info("\(type(of: bootstrap)): bind complete: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress)")
+				case .failure:
+					let _ = result.mapError{
+						PortForwarder.Log().error("\(type(of: bootstrap)): bind failed: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress), reason: \($0)")
+						return $0
+					}
+				}
+			}
+
+			return result
+		}
 	}
 }
 
 public class PortForwarder {
 	internal let group: EventLoopGroup
-	internal var serverBootstrap: [PortForwarding] = []
+	internal var serverBootstrap: [any PortForwarding] = []
+	internal var portForwarderClosure: PortForwarderClosure? = nil
 
 	internal static func Log() -> Logger {
 		var logger = Logger(label: "com.aldunelabs.portforwarder.PortForwardingServer")
@@ -86,8 +168,7 @@ public class PortForwarder {
 
 	public init(group: EventLoopGroup, remoteAddress: SocketAddress, bindAddress: SocketAddress, proto: MappedPort.Proto, udpConnectionTTL: Int = 5) throws {
 		self.group = group
-
-		self.createPortForwardingServer(on: group.next(), bindAddress: bindAddress, remoteAddress: remoteAddress, proto: proto, ttl: udpConnectionTTL)
+		self.serverBootstrap = try self.createPortForwardingServer(on: group.next(), bindAddress: bindAddress, remoteAddress: remoteAddress, proto: proto, ttl: udpConnectionTTL)
 	}
 
 	public init(group: EventLoopGroup, remoteHost: String, mappedPorts: [MappedPort], bindAddresses: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) throws {
@@ -95,11 +176,11 @@ public class PortForwarder {
 
 		try bindAddresses.forEach { bindAddress in
 			try mappedPorts.forEach { mappedPort in
-				self.createPortForwardingServer(on: group.next(),
-				                                bindAddress: try SocketAddress.makeAddress("tcp://\(bindAddress):\(mappedPort.host)"),
-				                                remoteAddress: try SocketAddress.makeAddress("tcp://\(remoteHost):\(mappedPort.guest)"),
-				                                proto: mappedPort.proto,
-				                                ttl: udpConnectionTTL)
+				self.serverBootstrap.append(contentsOf: try self.createPortForwardingServer(on: group.next(),
+				                                                                            bindAddress: try SocketAddress.makeAddress("tcp://\(bindAddress):\(mappedPort.host)"),
+				                                                                            remoteAddress: try SocketAddress.makeAddress("tcp://\(remoteHost):\(mappedPort.guest)"),
+				                                                                            proto: mappedPort.proto,
+				                                                                            ttl: udpConnectionTTL))
 			}
 		}
 	}
@@ -137,46 +218,78 @@ public class PortForwarder {
 	}
 
 	public func bind() -> PortForwarderClosure {
+		guard let portForwarderClosure = self.portForwarderClosure else {
+			self.portForwarderClosure = PortForwarderClosure(self.serverBootstrap.bind(), on: self.group.next())
 
-		let channels = self.serverBootstrap.map { bootstrap in
-			let result = bootstrap.bind()
+			return self.portForwarderClosure!
+		}
 
-			result.whenComplete{ result in
-				switch result {
-				case .success:
-					Self.Log().info("\(type(of: bootstrap)): bind complete: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress)")
-				case .failure:
-					let _ = result.mapError{
-						Self.Log().error("\(type(of: bootstrap)): bind failed: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress), reason: \($0)")
+		return portForwarderClosure
+	}
 
-						return $0
-					}
-				}
+	public func removePortForwardingServer(bindAddress: SocketAddress, remoteAddress: SocketAddress, proto: MappedPort.Proto, ttl: Int) throws {
+		let filter: (any PortForwarding) -> Bool = {
+			if proto == .both {
+				return $0.bindAddress == bindAddress && $0.remoteAddress == remoteAddress
 			}
 
-			return result
+			return $0.proto == proto && $0.bindAddress == bindAddress && $0.remoteAddress == remoteAddress
+		}
+		// Check if the port forwarding exists
+		let concerned = self.serverBootstrap.filter(filter)
+
+		if concerned.isEmpty {
+			throw PortForwardingError.notFound("Port forwarding not found for \(proto):\(bindAddress) -> \(remoteAddress)")
 		}
 
-		return PortForwarderClosure(channels, on: self.group.next())
+		// Remove the port forwarding from the list
+		self.serverBootstrap.removeAll(where: filter)
 	}
 
-	public func createPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, proto: MappedPort.Proto, ttl: Int) {
+	public func addPortForwardingServer(bindAddress: SocketAddress, remoteAddress: SocketAddress, proto: MappedPort.Proto, ttl: Int) throws -> [any PortForwarding] {
+		let filter: (any PortForwarding) -> Bool = {
+			if proto == .both {
+				return $0.bindAddress == bindAddress && $0.remoteAddress == remoteAddress
+			}
+
+			return $0.proto == proto && $0.bindAddress == bindAddress && $0.remoteAddress == remoteAddress
+		}
+
+		if self.serverBootstrap.first(where: filter) != nil {
+			throw PortForwardingError.alreadyBinded("Port forwarding already exists for \(proto):\(bindAddress) -> \(remoteAddress)")
+		}
+
+		let portForwarding = try self.createPortForwardingServer(on: self.group.next(), bindAddress: bindAddress, remoteAddress: remoteAddress, proto: proto, ttl: ttl)
+
+		self.serverBootstrap.append(contentsOf: portForwarding)
+
+		if let portForwarderClosure = self.portForwarderClosure {
+			// Append the new channels to the port forwarder closure
+			try portForwarderClosure.appendChannel(portForwarding.bind())
+		}
+
+		return portForwarding
+	}
+
+	public func createPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, proto: MappedPort.Proto, ttl: Int) throws -> [any PortForwarding] {
 		switch proto {
 		case .tcp:
-			serverBootstrap.append(self.createTCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress))
+			return [try self.createTCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress)]
 		case .both:
-			serverBootstrap.append(self.createTCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress))
-			serverBootstrap.append(self.createUDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl))
+			return [
+				try self.createTCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress),
+				try self.createUDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl)
+			]
 		default:
-			serverBootstrap.append(self.createUDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl))
+			return [try self.createUDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl)]
 		}
 	}
 
-	public func createTCPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) -> TCPPortForwardingServer {
+	public func createTCPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) throws -> TCPPortForwardingServer {
 		return TCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress)
 	}
 
-	public func createUDPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, ttl: Int) -> UDPPortForwardingServer {
+	public func createUDPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, ttl: Int) throws -> UDPPortForwardingServer {
 		return UDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl)
 	}
 }

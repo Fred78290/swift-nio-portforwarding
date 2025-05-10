@@ -135,9 +135,6 @@ private final class ClientEchoHandler: ChannelInboundHandler {
 
 final class TCPForwardingTests: XCTestCase {
 	let group: MultiThreadedEventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-	var echoServer: ServerBootstrap?
-	var echoClient: ClientBootstrap?
-	var portForwarder: PortForwarder?
 
 	deinit {
 		try! group.syncShutdownGracefully()
@@ -150,8 +147,6 @@ final class TCPForwardingTests: XCTestCase {
 			.channelInitializer { channel in
 				channel.pipeline.addHandler(ClientEchoHandler(remoteAddress: address))
 			}
-
-		self.echoClient = echoClient
 
 		let client = echoClient.connect(to: address)
 
@@ -166,7 +161,6 @@ final class TCPForwardingTests: XCTestCase {
 
 		return client
 	}
-
 
 	func setupEchoClient(host: String, serverPort: Int) throws -> EventLoopFuture<any Channel> {
 		Log(label: "TCPForwardingTests").info("Setup client: \(host), server: \(serverPort)")
@@ -183,8 +177,6 @@ final class TCPForwardingTests: XCTestCase {
 			.childChannelInitializer { channel in
 				channel.pipeline.addHandler(ServerEchoHandler())
 			}
-
-		self.echoServer = echoServer
 
 		let server: EventLoopFuture<any Channel> = echoServer.bind(to: address)
 
@@ -206,6 +198,10 @@ final class TCPForwardingTests: XCTestCase {
 		return self.setupEchoServer(to: try SocketAddress.makeAddressResolvingHost(host, port: port))
 	}
 
+	func setupForwarder(remoteAddress: SocketAddress, bindAddress: SocketAddress, proto: MappedPort.Proto) throws -> PortForwarder {
+		return try PortForwarder(group: self.group, remoteAddress: remoteAddress, bindAddress: bindAddress, proto: proto)
+	}
+
 	func setupForwarder(host: String, port: Int, guest: Int) throws -> PortForwarder {
 		Log(label: "TCPForwardingTests").info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
@@ -213,8 +209,6 @@ final class TCPForwardingTests: XCTestCase {
 		                                      remoteHost: host,
 		                                      mappedPorts: [MappedPort(host: port, guest: guest, proto: .tcp)],
 		                                      bindAddress: host)
-
-		self.portForwarder = portForwarder
 
 		return portForwarder
 	}
@@ -241,6 +235,27 @@ final class TCPForwardingTests: XCTestCase {
 
 		let server = try assertNoThrowWithValue(self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort).wait())
 		let client = try assertNoThrowWithValue(self.setupEchoClient(host: defaultEchoHost, serverPort: defaultForwardPort).wait())
+
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
+		}
+
+		try assertNoThrowWithValue(client.closeFuture.wait())
+	}
+
+	func testTCPEchoForwardingWithUnixSocket() async throws {
+		let remoteAddress = try SocketAddress(unixDomainSocketPath: "/tmp/echo.sock")
+		let bindAddress = try SocketAddress(unixDomainSocketPath: "/tmp/echo.sock.bind")
+		let forwarder = try self.setupForwarder(remoteAddress: remoteAddress, bindAddress: bindAddress, proto: .tcp)
+
+		_ = try assertNoThrowWithValue(forwarder.bind())
+
+		defer {
+			XCTAssertNoThrow(try forwarder.syncShutdownGracefully())
+		}
+
+		let server = try assertNoThrowWithValue(self.setupEchoServer(to: bindAddress).wait())
+		let client = try assertNoThrowWithValue(self.setupEchoClient(to: remoteAddress).wait())
 
 		defer {
 			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())

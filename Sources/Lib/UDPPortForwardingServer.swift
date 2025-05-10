@@ -163,6 +163,7 @@ public class UDPPortForwardingServer: PortForwarding {
 	public let bindAddress: SocketAddress
 	public let remoteAddress: SocketAddress
 	public var channel: Channel?
+	public var proto: MappedPort.Proto { return .udp }
 
 	public init(on: EventLoop,
 	            bindAddress: SocketAddress,
