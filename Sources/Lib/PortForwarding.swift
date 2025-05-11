@@ -34,14 +34,6 @@ extension PortForwarding {
 }
 
 extension PortForwarding {
-	internal static func Log(_ name: Self.Type) -> Logger {
-		var logger = Logger(label: "com.aldunelabs.portforwarder.\(name)")
-
-		logger.logLevel = portForwarderLogLevel
-
-		return logger
-	}
-
 	public func bind() -> EventLoopFuture<Channel> {
 		let server: EventLoopFuture<any Channel> = bootstrap.bind(to: self.bindAddress)
 
@@ -49,9 +41,9 @@ extension PortForwarding {
 			switch result {
 			case let .success(channel):
 				self.setChannel(channel)
-				Self.Log(type(of: self)).info("Listening on \(String(describing: channel.localAddress))")
+				Log(self).info("Listening on \(String(describing: channel.localAddress))")
 			case let .failure(error):
-				Self.Log(type(of: self)).error("Failed to bind \(self.bindAddress), \(error)")
+				Log(self).error("Failed to bind \(self.bindAddress), \(error)")
 			}
 		})
 
@@ -59,15 +51,15 @@ extension PortForwarding {
     }
 
     public func close() -> EventLoopFuture<Void> {
-		return self.eventLoop.flatSubmit {
-			guard let channel = self.channel else {
+		self.eventLoop.makeFutureWithTask {
+			guard let channel: any Channel = self.channel else {
 				// The server wasn't created yet, so we can just shut down straight away and let the OS clean us up.
-				return self.eventLoop.makeSucceededFuture(())
+				return
 			}
 
-			Self.Log(type(of: self)).info("Close on \(String(describing: channel.localAddress))")
+			Log(self).info("Close on \(String(describing: channel.localAddress))")
 
-			return channel.close()
+			return try await channel.close()
 		}
 	}
 }

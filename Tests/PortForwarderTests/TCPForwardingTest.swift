@@ -21,6 +21,25 @@ extension Channel {
 	}
 }
 
+func asyncAssertNoThrowWithValue<T>(
+	_ body: @autoclosure () async throws -> T,
+	defaultValue: T? = nil,
+	message: String? = nil,
+	file: StaticString = #filePath,
+	line: UInt = #line
+) async throws -> T {
+	do {
+		return try await body()
+	} catch {
+		XCTFail("\(message.map { $0 + ": " } ?? "")unexpected error \(error) thrown", file: (file), line: line)
+		if let defaultValue = defaultValue {
+			return defaultValue
+		} else {
+			throw error
+		}
+	}
+}
+
 func assertNoThrowWithValue<T>(
 	_ body: @autoclosure () throws -> T,
 	defaultValue: T? = nil,
@@ -136,6 +155,11 @@ private final class ClientEchoHandler: ChannelInboundHandler {
 final class TCPForwardingTests: XCTestCase {
 	let group: MultiThreadedEventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
+	override class func setUp() {
+		super.setUp()
+		portForwarderLogLevel = Logger.Level.debug
+	}
+
 	deinit {
 		try! group.syncShutdownGracefully()
 	}
@@ -198,8 +222,8 @@ final class TCPForwardingTests: XCTestCase {
 		return self.setupEchoServer(to: try SocketAddress.makeAddressResolvingHost(host, port: port))
 	}
 
-	func setupForwarder(remoteAddress: SocketAddress, bindAddress: SocketAddress, proto: MappedPort.Proto) throws -> PortForwarder {
-		return try PortForwarder(group: self.group, remoteAddress: remoteAddress, bindAddress: bindAddress, proto: proto)
+	func setupForwarder(remoteAddress: SocketAddress, bindAddress: SocketAddress) throws -> PortForwarder {
+		return try PortForwarder(group: self.group, remoteAddress: remoteAddress, bindAddress: bindAddress, proto: .tcp)
 	}
 
 	func setupForwarder(host: String, port: Int, guest: Int) throws -> PortForwarder {
@@ -214,6 +238,18 @@ final class TCPForwardingTests: XCTestCase {
 	}
 
 	func testTCPEchoDirect() async throws {
+		let remoteAddress = try SocketAddress(unixDomainSocketPath: "/tmp/echo.sock", cleanupExistingSocketFile: true)
+		let server = try assertNoThrowWithValue(self.setupEchoServer(to: remoteAddress).wait())
+		let client = try assertNoThrowWithValue(self.setupEchoClient(to: remoteAddress).wait())
+
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
+		}
+
+		try assertNoThrowWithValue(client.closeFuture.wait())
+	}
+
+	func testTCPEchoDirectWithUnixSocket() async throws {
 		let server = try assertNoThrowWithValue(self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort).wait())
 		let client = try assertNoThrowWithValue(self.setupEchoClient(host: defaultEchoHost, serverPort: defaultServerPort).wait())
 
@@ -244,9 +280,9 @@ final class TCPForwardingTests: XCTestCase {
 	}
 
 	func testTCPEchoForwardingWithUnixSocket() async throws {
-		let remoteAddress = try SocketAddress(unixDomainSocketPath: "/tmp/echo.sock")
-		let bindAddress = try SocketAddress(unixDomainSocketPath: "/tmp/echo.sock.bind")
-		let forwarder = try self.setupForwarder(remoteAddress: remoteAddress, bindAddress: bindAddress, proto: .tcp)
+		let remoteAddress = try SocketAddress(unixDomainSocketPath: "/tmp/echo.sock", cleanupExistingSocketFile: true)
+		let bindAddress = try SocketAddress(unixDomainSocketPath: "/tmp/echo.sock.bind", cleanupExistingSocketFile: true)
+		let forwarder = try self.setupForwarder(remoteAddress: remoteAddress, bindAddress: bindAddress)
 
 		_ = try assertNoThrowWithValue(forwarder.bind())
 
@@ -254,13 +290,41 @@ final class TCPForwardingTests: XCTestCase {
 			XCTAssertNoThrow(try forwarder.syncShutdownGracefully())
 		}
 
-		let server = try assertNoThrowWithValue(self.setupEchoServer(to: bindAddress).wait())
-		let client = try assertNoThrowWithValue(self.setupEchoClient(to: remoteAddress).wait())
+		let server = try assertNoThrowWithValue(self.setupEchoServer(to: remoteAddress).wait())
+		let client = try assertNoThrowWithValue(self.setupEchoClient(to: bindAddress).wait())
 
 		defer {
 			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
 		}
 
 		try assertNoThrowWithValue(client.closeFuture.wait())
+	}
+
+	func testTCPEchoForwardingByAddingForward() async throws {
+		let forwarder = try assertNoThrowWithValue(PortForwarder(group: self.group,
+		                                                         remoteHost: "www.google.com",
+		                                                         mappedPorts: [
+		                                                         	MappedPort(host: 1443, guest: 443, proto: .tcp),
+		                                                         	MappedPort(host: 8080, guest: 80, proto: .tcp)],
+		                                                         bindAddress: "127.0.0.1"))
+
+		let portForwarderClosure = try assertNoThrowWithValue(forwarder.bind())
+		let eventLoop = self.group.next()
+
+		eventLoop.scheduleTask(in: .seconds(1)) {
+			XCTAssertNoThrow(try forwarder.addPortForwardingServer(remoteHost: "www.apple.com",
+			                                                       mappedPorts: [
+			                                                       	MappedPort(host: 4443, guest: 443, proto: .tcp),
+			                                                       	MappedPort(host: 8081, guest: 80, proto: .tcp)],
+			                                                       bindAddress: "127.0.0.1"))
+		}
+
+		eventLoop.scheduleTask(in: .seconds(5)) {
+			XCTAssertNoThrow(try DispatchQueue.main.sync {
+				try forwarder.syncShutdownGracefully()
+			})
+		}
+
+		try await asyncAssertNoThrowWithValue(try await portForwarderClosure.get())
 	}
 }

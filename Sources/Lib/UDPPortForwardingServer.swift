@@ -20,13 +20,6 @@ public class UDPWrapperHandler: ChannelInboundHandler {
 	var last: Date
 	var task: RepeatedTask?
 
-	internal static func Log() -> Logger {
-		var logger = Logger(label: "com.aldunelabs.portforwarder.UDPWrapperHandler")
-		logger.logLevel = portForwarderLogLevel
-
-		return logger
-	}
-
 	deinit {
 		if let task = self.task {
 			task.cancel(promise: nil)
@@ -51,7 +44,7 @@ public class UDPWrapperHandler: ChannelInboundHandler {
 
 		if dt > TimeInterval(self.ttl) {
 			if isDebugLog() {
-				Self.Log().debug("Close UDP tunnel \(self.inboundChannel) <--> \(self.remoteAddress)")
+				Log(self).debug("Close UDP tunnel \(self.inboundChannel) <--> \(self.remoteAddress)")
 			}
 
 			inboundChannel.close(promise: nil)
@@ -67,7 +60,7 @@ public class UDPWrapperHandler: ChannelInboundHandler {
 		let envelope = AddressedEnvelope<ByteBuffer>(remoteAddress: self.remoteAddress, data: data.data)
 
 		if isDebugLog() {
-			Self.Log().debug("received data from: \(data.remoteAddress), forward to: \(self.remoteAddress)")
+			Log(self).debug("received data from: \(data.remoteAddress), forward to: \(self.remoteAddress)")
 		}
 
 		self.last = .now
@@ -76,7 +69,7 @@ public class UDPWrapperHandler: ChannelInboundHandler {
 	}
 
 	public func errorCaught(context: ChannelHandlerContext, error: Error) {
-		Self.Log().error("Error in tunnel: \(self.outboundChannel) <--> \(self.remoteAddress), \(error)")
+		Log(self).error("Error in tunnel: \(self.outboundChannel) <--> \(self.remoteAddress), \(error)")
 
 		context.close(promise: nil)
 	}
@@ -87,18 +80,13 @@ public class InboundUDPWrapperHandler: ChannelInboundHandler {
 	public typealias OutboundOut = AddressedEnvelope<ByteBuffer>
 
 	let remoteAddress: SocketAddress
+	let bindAddress: SocketAddress
 	let ttl: Int
 	var task: RepeatedTask?
 
-	internal static func Log() -> Logger {
-		var logger = Logger(label: "com.aldunelabs.portforwarder.InboundUDPWrapperHandler")
-		logger.logLevel = portForwarderLogLevel
-
-		return logger
-	}
-
-	public init(remoteAddress: SocketAddress, ttl: Int) {
+	public init(remoteAddress: SocketAddress, bindAddress: SocketAddress, ttl: Int) {
 		self.remoteAddress = remoteAddress
+		self.bindAddress = bindAddress
 		self.ttl = ttl
 	}
 
@@ -108,12 +96,13 @@ public class InboundUDPWrapperHandler: ChannelInboundHandler {
 		let outboundChannel = context.channel
 
 		if isDebugLog() {
-			Self.Log().debug("received data from: \(envelope.remoteAddress)")
+			Log(self).debug("received data from: \(envelope.remoteAddress)")
 		}
 
 		let client: DatagramBootstrap = DatagramBootstrap(group: eventLoop)
 			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { inboundChannel in
+				var promise: EventLoopPromise<Void>? = nil
 				let data: AddressedEnvelope<ByteBuffer> = AddressedEnvelope<ByteBuffer>(remoteAddress: self.remoteAddress, data: envelope.data)
 				let channelFuture = inboundChannel.pipeline.addHandler(UDPWrapperHandler(remoteAddress:envelope.remoteAddress,
 				                                                                         inboundChannel: inboundChannel,
@@ -121,22 +110,41 @@ public class InboundUDPWrapperHandler: ChannelInboundHandler {
 				                                                                         ttl: self.ttl))
 
 				if isDebugLog() {
-					Self.Log().debug("forward data from: \(envelope.remoteAddress) to \(self.remoteAddress)")
+					Log(self).debug("forward data from: \(envelope.remoteAddress) to \(self.remoteAddress)")
+
+					promise = eventLoop.makePromise(of: Void.self)
+					promise!.futureResult.whenComplete { result in
+						switch result {
+						case .success:
+							Log(self).debug("Success forward data from: \(envelope.remoteAddress) to \(self.remoteAddress)")
+						case let .failure(error):
+							Log(self).error("Failed to forward data to \(self.remoteAddress), \(error)")
+						}
+					}
 				}
 
-				inboundChannel.writeAndFlush(UDPWrapperHandler.wrapOutboundOut(data), promise: nil)
+				inboundChannel.writeAndFlush(UDPWrapperHandler.wrapOutboundOut(data), promise: promise)
 
 				return channelFuture
 			}
 
-		let server = client.bind(host: "0.0.0.0", port: 0)
+		let server: EventLoopFuture<any Channel>
+
+		switch self.bindAddress {
+		case .unixDomainSocket:
+			server = client.bind(unixDomainSocketPath: "/tmp/portforward-\(UUID().uuidString).sock", cleanupExistingSocketFile: true)
+		case .v4(let address):
+			server = client.bind(host: address.host, port: 0)
+		case .v6(let address):
+			server = client.bind(host: address.host, port: 0)
+		}
 
 		server.whenComplete { result in
 			switch result {
 			case .success:
-				Self.Log().info("Success to send data to \(self.remoteAddress)")
+				Log(self).debug("Bind success to receive data to \(self.remoteAddress)")
 			case let .failure(error):
-				Self.Log().error("Failed to send to \(self.remoteAddress), \(error)")
+				Log(self).error("Failed to bind to \(self.remoteAddress), \(error)")
 			}
 		}
 	}
@@ -148,7 +156,7 @@ public class InboundUDPWrapperHandler: ChannelInboundHandler {
 	}
 
 	public func errorCaught(context: ChannelHandlerContext, error: Error) {
-		Self.Log().error("Caught error: \(error.localizedDescription)")
+		Log(self).error("Caught error: \(error.localizedDescription)")
 
 		// As we are not really interested getting notified on success or failure we just pass nil as promise to
 		// reduce allocations.
@@ -176,7 +184,7 @@ public class UDPPortForwardingServer: PortForwarding {
 		self.bootstrap = DatagramBootstrap(group: on)
 			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { inboundChannel in
-				inboundChannel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress, ttl: ttl))
+				inboundChannel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress, bindAddress: bindAddress, ttl: ttl))
 			}
 	}
 

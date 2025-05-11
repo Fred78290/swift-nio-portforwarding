@@ -13,18 +13,11 @@ final class TCPWrapperHandler: ChannelDuplexHandler {
 	typealias OutboundIn = ByteBuffer
 	typealias OutboundOut = ByteBuffer
 
-	private static func Log() -> Logger {
-		var logger = Logger(label: "com.aldunelabs.portforwarder.TCPWrapperHandler")
-		logger.logLevel = portForwarderLogLevel
-
-		return logger
-	}
-
 	func channelRead(context: ChannelHandlerContext, data: NIOAny) {
 		let data = self.unwrapInboundIn(data)
 
 		if isDebugLog() {
-			Self.Log().debug("read data from: \(String(describing: context.channel.remoteAddress))")
+			Log(self).debug("read data from: \(String(describing: context.channel.remoteAddress))")
 		}
 
 		context.fireChannelRead(self.wrapInboundOut(data))
@@ -34,7 +27,7 @@ final class TCPWrapperHandler: ChannelDuplexHandler {
 		let data = self.unwrapOutboundIn(data)
 
 		if isDebugLog() {
-			Self.Log().debug("write data to: \(String(describing: context.channel.remoteAddress))")
+			Log(self).debug("write data to: \(String(describing: context.channel.remoteAddress))")
 		}
 
 		context.write(self.wrapOutboundOut(data), promise: promise)
@@ -48,13 +41,6 @@ public class TCPPortForwardingServer: PortForwarding {
 	public let remoteAddress: SocketAddress
 	public var channel: Channel?
 	public var proto: MappedPort.Proto { return .tcp }
-
-	internal static func Log() -> Logger {
-		var logger = Logger(label: "com.aldunelabs.portforwarder.TCPPortForwardingServer")
-		logger.logLevel = portForwarderLogLevel
-
-		return logger
-	}
 
 	public init(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) {
 		let bootstrap = ServerBootstrap(group: on)
@@ -73,7 +59,7 @@ public class TCPPortForwardingServer: PortForwarding {
 
 	internal func childChannelInitializer(channel: Channel) -> EventLoopFuture<Void> {
 		if isDebugLog() {
-			Self.Log().debug("connection from: \(String(describing: channel.remoteAddress))")
+			Log(self).debug("connection from: \(String(describing: channel.remoteAddress))")
 		}
 
 		return ClientBootstrap(group: channel.eventLoop)
@@ -82,7 +68,7 @@ public class TCPPortForwardingServer: PortForwarding {
 				let (ours, theirs) = GlueHandler.matchedPair()
 
 				if isDebugLog() {
-					Self.Log().debug("connected to: \(String(describing: childChannel.remoteAddress))")
+					Log(self).debug("connected to: \(String(describing: childChannel.remoteAddress))")
 				}
 
 				return childChannel.pipeline.addHandlers([TCPWrapperHandler(), ours, ErrorHandler()]).flatMap {
