@@ -202,8 +202,16 @@ public class PortForwarder: @unchecked Sendable {
 	internal var serverBootstrap: [any PortForwarding] = []
 	internal var portForwarderClosure: PortForwarderClosure? = nil
 
+	private enum RunState {
+		case running
+		case closing([(DispatchQueue, ShutdownGracefullyCallback)])
+		case closed(Error?)
+	}
 
+	private typealias ShutdownGracefullyCallback = (Error?) -> Void
 
+	private let shutdownLock: NIOLock = NIOLock()
+	private var runState: RunState = .running
 
 	deinit {
 		try? self.group.syncShutdownGracefully()
@@ -244,24 +252,114 @@ public class PortForwarder: @unchecked Sendable {
 		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: [bindAddress], udpConnectionTTL: udpConnectionTTL)
 	}
 
-	@Sendable
+	@available(*, noasync, message: "this can end up blocking the calling thread", renamed: "shutdownGracefully()")
 	public func syncShutdownGracefully() throws {
-		let closed = self.serverBootstrap.map { bootstrap in
-			return bootstrap.close()
-		}
-
-		try EventLoopFuture.andAllComplete(closed, on: self.group.next()).wait()
+		try self._syncShutdownGracefully()
 	}
 
-	public func shutdownGracefully() async throws {
-		let closed = self.serverBootstrap.map { bootstrap in
-			return bootstrap.close()
+	private func _syncShutdownGracefully() throws {
+		let semaphore = DispatchSemaphore(value: 0)
+		let error = NIOLockedValueBox<Error?>(nil)
+
+		self.shutdownGracefully { shutdownError in
+			if let shutdownError = shutdownError {
+				error.withLockedValue {
+					$0 = shutdownError
+				}
+			}
+			semaphore.signal()
 		}
 
-		try await EventLoopFuture.andAllComplete(closed, on: self.group.next()).get()
+		semaphore.wait()
+
+		try error.withLockedValue { error in
+			if let error = error {
+				throw error
+			}
+		}
 	}
 
-	public func bind() -> PortForwarderClosure {
+	public func shutdownGracefully(_ callback: @escaping @Sendable (Error?) -> Void) {
+		self._shutdownGracefully(queue: .global(), callback)
+	}
+
+	private func _shutdownGracefully(queue: DispatchQueue, _ handler: @escaping ShutdownGracefullyCallback) {
+		let g = DispatchGroup()
+		let q = DispatchQueue(label: "PortForwarder.shutdownGracefullyQueue", target: queue)
+		let wasRunning: Bool = self.shutdownLock.withLock {
+			// We need to check the current `runState` and react accordingly.
+			switch self.runState {
+			case .running:
+				// If we are still running, we set the `runState` to `closing`,
+				// so that potential future invocations know, that the shutdown
+				// has already been initiaited.
+				self.runState = .closing([])
+				return true
+			case .closing(var callbacks):
+				// If we are currently closing, we need to register the `handler`
+				// for invocation after the shutdown is completed.
+				callbacks.append((q, handler))
+				self.runState = .closing(callbacks)
+				return false
+			case .closed(let error):
+				// If we are already closed, we can directly dispatch the `handler`
+				q.async {
+					handler(error)
+				}
+				return false
+			}
+		}
+
+		// If the `runState` was not `running` when `shutdownGracefully` was called,
+		// the shutdown has already been initiated and we have to return here.
+		guard wasRunning else {
+			return
+		}
+
+		let future = EventLoopFuture.andAllComplete(self.serverBootstrap.map { $0.close() }, on: self.group.next())
+
+		future.whenComplete { result in
+			var err : Error? = nil
+
+			switch result {
+			case .success:
+				if isDebugLog() {
+					Log(self).debug("Port forwarder closed")
+				}
+			case let .failure(error):
+				Log(self).error("Failed to close port forwarder, \(error)")
+				err = error
+			}
+
+			g.notify(queue: q) {
+				let queueCallbackPairs = self.shutdownLock.withLock {
+					switch self.runState {
+					case .closed, .running:
+						preconditionFailure("PortForwarder in illegal state when closing: \(self.runState)")
+					case .closing(let callbacks):
+						self.runState = .closed(err)
+						return callbacks
+					}
+				}
+
+				queue.async {
+					handler(err)
+				}
+
+				for queueCallbackPair in queueCallbackPairs {
+					queueCallbackPair.0.async {
+						queueCallbackPair.1(err)
+					}
+				}
+			}
+		}
+	}
+
+	public func bind() throws -> PortForwarderClosure {
+		guard case .running = self.runState else {
+			throw PortForwardingError.closePending
+		}
+
 		guard let portForwarderClosure = self.portForwarderClosure else {
 			self.portForwarderClosure = PortForwarderClosure(self.serverBootstrap.bind(), on: self.group.next())
 
@@ -295,6 +393,10 @@ public class PortForwarder: @unchecked Sendable {
 	}
 
 	public func addPortForwardingServer(remoteHost: String, mappedPorts: [MappedPort], bindAddress: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) throws -> [any PortForwarding] {
+		guard case .running = self.runState else {
+			throw PortForwardingError.closePending
+		}
+
 		let portForwarding = try bindAddress.reduce(into: [any PortForwarding]()) { partialResult, bindAddress in
 			try mappedPorts.forEach { mappedPort in
 				let bindAddress = try SocketAddress.makeAddress("tcp://\(bindAddress):\(mappedPort.host)")
@@ -330,6 +432,10 @@ public class PortForwarder: @unchecked Sendable {
 	}
 
 	public func addPortForwardingServer(bindAddress: SocketAddress, remoteAddress: SocketAddress, proto: MappedPort.Proto, ttl: Int) throws -> [any PortForwarding] {
+		guard case .running = self.runState else {
+			throw PortForwardingError.closePending
+		}
+
 		let filter: (any PortForwarding) -> Bool = {
 			if proto == .both {
 				return $0.bindAddress == bindAddress && $0.remoteAddress == remoteAddress

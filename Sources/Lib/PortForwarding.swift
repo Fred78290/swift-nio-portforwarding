@@ -41,26 +41,35 @@ extension PortForwarding {
 			switch result {
 			case let .success(channel):
 				self.setChannel(channel)
-				Log(self).info("Listening on \(String(describing: channel.localAddress))")
+				Log(self).debug("Listening on \(String(describing: channel.localAddress))")
 			case let .failure(error):
 				Log(self).error("Failed to bind \(self.bindAddress), \(error)")
 			}
 		})
 
 		return server
-    }
+	}
 
-    public func close() -> EventLoopFuture<Void> {
-		self.eventLoop.makeFutureWithTask {
-			guard let channel: any Channel = self.channel else {
-				// The server wasn't created yet, so we can just shut down straight away and let the OS clean us up.
-				return
-			}
-
-			Log(self).info("Close on \(String(describing: channel.localAddress))")
-
-			return try await channel.close()
+	public func close() -> EventLoopFuture<Void> {
+		guard let channel: any Channel = self.channel else {
+			// The server wasn't created yet, so we can just shut down straight away and let the OS clean us up.
+			return self.eventLoop.makeSucceededVoidFuture()
 		}
+
+		Log(self).debug("Close on \(String(describing: channel.localAddress))")
+
+		let c = channel.close()
+
+		c.whenComplete { result in
+			switch result {
+			case .success:
+				Log(self).debug("Closed on \(String(describing: channel.localAddress))")
+			case let .failure(error):
+				Log(self).error("Failed to close \(String(describing: channel.localAddress)), \(error)")
+			}
+		}
+
+		return c
 	}
 }
 

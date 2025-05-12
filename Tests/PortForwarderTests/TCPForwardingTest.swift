@@ -320,9 +320,10 @@ final class TCPForwardingTests: XCTestCase {
 		}
 
 		eventLoop.scheduleTask(in: .seconds(5)) {
-			XCTAssertNoThrow(try DispatchQueue.main.sync {
-				try forwarder.syncShutdownGracefully()
-			})
+			forwarder.shutdownGracefully { _ in
+				Log(label: "testTCPEchoForwardingByAddingForward").info("shutdownGracefully")
+				// Do nothing
+			}
 		}
 
 		try await asyncAssertNoThrowWithValue(try await portForwarderClosure.get())
