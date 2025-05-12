@@ -328,4 +328,30 @@ final class TCPForwardingTests: XCTestCase {
 
 		try await asyncAssertNoThrowWithValue(try await portForwarderClosure.get())
 	}
+
+	func testTCPEchoForwardingByAddingForwardAfterClose() async throws {
+		let forwarder = try assertNoThrowWithValue(PortForwarder(group: self.group,
+		                                                         remoteHost: "www.google.com",
+		                                                         mappedPorts: [
+		                                                         	MappedPort(host: 1443, guest: 443, proto: .tcp),
+		                                                         	MappedPort(host: 8080, guest: 80, proto: .tcp)],
+		                                                         bindAddress: "127.0.0.1"))
+
+		let portForwarderClosure = try assertNoThrowWithValue(forwarder.bind())
+		let eventLoop = self.group.next()
+
+		eventLoop.scheduleTask(in: .seconds(2)) {
+			forwarder.shutdownGracefully { _ in
+				Log(label: "testTCPEchoForwardingByAddingForwardAfterClose").info("shutdownGracefully")
+			}
+		}
+
+		try await asyncAssertNoThrowWithValue(try await portForwarderClosure.get())
+
+		XCTAssertThrowsError(try forwarder.addPortForwardingServer(remoteHost: "www.apple.com",
+		                                                           mappedPorts: [
+		                                                           	MappedPort(host: 4443, guest: 443, proto: .tcp),
+		                                                           	MappedPort(host: 8081, guest: 80, proto: .tcp)],
+		                                                           bindAddress: "127.0.0.1"))
+	}
 }
