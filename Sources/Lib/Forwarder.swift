@@ -5,6 +5,7 @@ import NIOCore
 import NIOHTTP1
 import NIOPosix
 import Atomics
+import NIOConcurrencyHelpers
 
 extension SocketAddress {
 	public struct UnixDomainSocketPathWrongType: Error {}
@@ -111,7 +112,7 @@ public class PortForwarderClosure: @unchecked Sendable {
 
 			if counter == 0 {
 				self.closing = true
-				self.promise.succeed(())
+				self.promise.succeed()
 			}
 		}
 	}
@@ -177,23 +178,7 @@ public typealias PortForwardings = [any PortForwarding]
 
 extension PortForwardings {
 	public func bind() -> [EventLoopFuture<Channel>] {
-		self.map { bootstrap in
-			let result = bootstrap.bind()
-
-			result.whenComplete{ result in
-				switch result {
-				case .success:
-					PortForwarder.Log().info("\(type(of: bootstrap)): bind complete: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress)")
-				case .failure:
-					let _ = result.mapError{
-						PortForwarder.Log().error("\(type(of: bootstrap)): bind failed: \(bootstrap.bindAddress) -> \(bootstrap.remoteAddress), reason: \($0)")
-						return $0
-					}
-				}
-			}
-
-			return result
-		}
+		self.map { $0.bind() }
 	}
 }
 

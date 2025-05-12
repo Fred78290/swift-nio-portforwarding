@@ -18,8 +18,8 @@ public protocol PortForwarding: Equatable {
 	var remoteAddress: SocketAddress { get }
 	var bindAddress: SocketAddress { get }
 	var channel: Channel? { get }
-    var eventLoop: EventLoop { get }
-	
+	var eventLoop: EventLoop { get }
+
 	func setChannel(_ channel: Channel)
 	func bind() -> EventLoopFuture<Channel>
 	func close() -> EventLoopFuture<Void>
