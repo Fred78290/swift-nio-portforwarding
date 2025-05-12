@@ -73,13 +73,13 @@ private final class ServerEchoHandler: ChannelInboundHandler {
 
 		// As we are not really interested getting notified on success or failure we just pass nil as promise to
 		// reduce allocations.
-		context.writeAndFlush(data, promise: context.eventLoop.makePromise(of: Void.self))
+		context.writeAndFlush(data, promise: nil)
 	}
 
 	public func channelReadComplete(context: ChannelHandlerContext) {
 		Log(label: "ServerEchoHandler").info("server read complete")
 		context.flush()
-		context.close(promise: context.eventLoop.makePromise(of: Void.self))
+		context.close(promise: nil)
 	}
 
 	public func errorCaught(context: ChannelHandlerContext, error: Error) {
@@ -136,7 +136,7 @@ private final class ClientEchoHandler: ChannelInboundHandler {
 
 		if self.received == message {
 			logger.info("client read complete, success")
-			context.close(promise: context.eventLoop.makePromise(of: Void.self))
+			context.close(promise: nil)
 		} else {
 			logger.error("client read complete, failed")
 			let _: EventLoopFuture<Void> = context.eventLoop.makeFailedFuture(EchoingError.mismatchMessage)
