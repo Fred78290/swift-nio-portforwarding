@@ -202,13 +202,8 @@ public class PortForwarder: @unchecked Sendable {
 	internal var serverBootstrap: [any PortForwarding] = []
 	internal var portForwarderClosure: PortForwarderClosure? = nil
 
-	internal static func Log() -> Logger {
-		var logger = Logger(label: "com.aldunelabs.portforwarder.PortForwardingServer")
 
-		logger.logLevel = portForwarderLogLevel
 
-		return logger
-	}
 
 	deinit {
 		try? self.group.syncShutdownGracefully()
