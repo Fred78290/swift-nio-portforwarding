@@ -83,7 +83,7 @@ final class ErrorHandler: ChannelInboundHandler {
 
 public typealias ChannelResults = [Result<Void, any Error>]
 
-public class PortForwarderClosure {
+public class PortForwarderClosure: @unchecked Sendable {
 	private var channels : [EventLoopFuture<Channel>]
 	private let on: EventLoop
 	private var closing: Bool = false
