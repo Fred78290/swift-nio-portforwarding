@@ -85,7 +85,8 @@ private final class ServerEchoHandler: ChannelInboundHandler {
 	public func errorCaught(context: ChannelHandlerContext, error: Error) {
 		Log(label: "ServerEchoHandler").error("Caught error: \(error.localizedDescription)")
 
-		context.close(promise: nil)
+		context.fireErrorCaught(error)
+		//context.close(promise: nil)
 	}
 }
 
@@ -148,7 +149,8 @@ private final class ClientEchoHandler: ChannelInboundHandler {
 
 		// As we are not really interested getting notified on success or failure we just pass nil as promise to
 		// reduce allocations.
-		context.close(promise: nil)
+		//context.close(promise: nil)
+		context.fireErrorCaught(error)
 	}
 }
 
