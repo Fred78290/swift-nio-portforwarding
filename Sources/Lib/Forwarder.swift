@@ -184,6 +184,7 @@ extension PortForwardings {
 
 public class PortForwarder: @unchecked Sendable {
 	internal let group: EventLoopGroup
+	internal var shutdownGroup: Bool = false
 	internal var serverBootstrap: [any PortForwarding] = []
 	internal var portForwarderClosure: PortForwarderClosure? = nil
 
@@ -199,7 +200,9 @@ public class PortForwarder: @unchecked Sendable {
 	private var runState: RunState = .running
 
 	deinit {
-		try? self.group.syncShutdownGracefully()
+		if shutdownGroup {
+			try? self.group.syncShutdownGracefully()
+		}
 	}
 
 	public init(group: EventLoopGroup, remoteAddress: SocketAddress, bindAddress: SocketAddress, proto: MappedPort.Proto, udpConnectionTTL: Int = 5) throws {
@@ -235,6 +238,8 @@ public class PortForwarder: @unchecked Sendable {
 		let group = MultiThreadedEventLoopGroup(numberOfThreads: mappedPorts.count)
 
 		try self.init(group: group, remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: [bindAddress], udpConnectionTTL: udpConnectionTTL)
+
+		self.shutdownGroup = true
 	}
 
 	@available(*, noasync, message: "this can end up blocking the calling thread", renamed: "shutdownGracefully()")
