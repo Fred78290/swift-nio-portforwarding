@@ -59,7 +59,7 @@ public class TCPPortForwardingServer: PortForwarding {
 
 	internal func childChannelInitializer(channel: Channel) -> EventLoopFuture<Void> {
 		if isDebugLog() {
-			Log(self).debug("connection from: \(String(describing: channel.remoteAddress))")
+			Log(self).debug("connection from: \(String(describing: channel.remoteAddress)) -> \(String(describing: remoteAddress))")
 		}
 
 		return ClientBootstrap(group: channel.eventLoop)
