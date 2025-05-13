@@ -12,7 +12,7 @@ final class CustomPortForwarder: PortForwarder, @unchecked Sendable {
 		func stream(fromChannel: NIOAsyncChannel<ByteBuffer, ByteBuffer>, toChannel: NIOAsyncChannel<ByteBuffer, ByteBuffer>) async throws {
 			try await fromChannel.executeThenClose { (fromInput: NIOAsyncChannelInboundStream<ByteBuffer>, fromOutput: NIOAsyncChannelOutboundWriter<ByteBuffer>) in
 				try await toChannel.executeThenClose { (toInput: NIOAsyncChannelInboundStream<ByteBuffer>, toOutput: NIOAsyncChannelOutboundWriter<ByteBuffer>) in
-					await withTaskGroup { group in
+					await withTaskGroup(of: Void.self) { group in
 
 						group.addTask {
 							do {
