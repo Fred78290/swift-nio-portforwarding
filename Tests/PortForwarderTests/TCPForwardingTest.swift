@@ -288,6 +288,26 @@ final class TCPForwardingTests: XCTestCase {
 		try assertNoThrowWithValue(client.closeFuture.wait())
 	}
 
+	func testTCPEchoForwardingWrongPort() async throws {
+		let helper = TcpHelper(group: group)
+		let forwarder = try self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort+1)
+
+		_ = try assertNoThrowWithValue(forwarder.bind())
+
+		defer {
+			XCTAssertNoThrow(try forwarder.syncShutdownGracefully())
+		}
+
+		let server = try assertNoThrowWithValue(helper.setupEchoServer(host: defaultEchoHost, port: defaultServerPort).wait())
+		let client = try assertNoThrowWithValue(helper.setupEchoClient(host: defaultEchoHost, serverPort: defaultForwardPort).wait())
+
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
+		}
+
+		try assertNoThrowWithValue(client.closeFuture.wait())
+	}
+
 	func testTCPEchoForwardingWithUnixSocket() async throws {
 		let helper = TcpHelper(group: group)
 		let remoteAddress = try SocketAddress(unixDomainSocketPath: "/tmp/echo.sock", cleanupExistingSocketFile: true)
