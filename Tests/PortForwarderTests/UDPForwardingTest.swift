@@ -115,33 +115,45 @@ final class UDPForwardingTests: XCTestCase {
 		try! group.syncShutdownGracefully()
 	}
 
-	func setupEchoClient(host: String, serverPort: Int, clientPort: Int) -> EventLoopFuture<Channel> {
-		self.logger.info("Setup client: \(host), server: \(serverPort), client: \(clientPort)")
+	override class func setUp() {
+		super.setUp()
+		portForwarderLogLevel = Logger.Level.debug
+	}
 
+	func setupEchoClient(from: SocketAddress, to: SocketAddress) -> EventLoopFuture<Channel> {
+		let client: EventLoopFuture<any Channel>
 		let echoClient = DatagramBootstrap(group: group.next())
 			// Enable SO_REUSEADDR.
 			.channelOption(.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { channel in
-				channel.pipeline.addHandler(ClientEchoHandler(remoteAddress: try! SocketAddress.makeAddressResolvingHost(host, port: serverPort)))
+				channel.pipeline.addHandler(ClientEchoHandler(remoteAddress: to))
 			}
 
-		let client = echoClient.bind(host: host, port: clientPort)
+		if from == to {
+			client = echoClient.connect(to: to)
+		} else {
+			client = echoClient.bind(to: from)
+		}
 
 		client.whenComplete { result in
 			switch result {
-				case let .success(channel):
-					self.logger.info("client complete \(String(describing: channel.localAddress))")
-				case let .failure(error):
-					self.logger.info("client failed \(error.localizedDescription)")
+			case let .success(channel):
+				self.logger.info("client complete \(String(describing: channel.localAddress))")
+			case let .failure(error):
+				self.logger.info("client failed \(error.localizedDescription)")
 			}
 		}
 
 		return client
 	}
 
-	func setupEchoServer(host: String, port: Int) -> EventLoopFuture<Channel> {
-		self.logger.info("Setup server: \(host), listen: \(port)")
+	func setupEchoClient(host: String, serverPort: Int, clientPort: Int) -> EventLoopFuture<Channel> {
+		self.logger.info("Setup client: \(host), server: \(serverPort), client: \(clientPort)")
 
+		return self.setupEchoClient(from: try! SocketAddress.makeAddressResolvingHost(host, port: clientPort), to: try! SocketAddress.makeAddressResolvingHost(host, port: serverPort))
+	}
+
+	func setupEchoServer(to address: SocketAddress) -> EventLoopFuture<Channel> {
 		let echoServer = DatagramBootstrap(group: group.next())
 			// Enable SO_REUSEADDR.
 			.channelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -149,27 +161,37 @@ final class UDPForwardingTests: XCTestCase {
 				channel.pipeline.addHandler(ServerEchoHandler())
 			}
 
-		let server: EventLoopFuture<any Channel> = echoServer.bind(host: host, port: port)
+		let server: EventLoopFuture<any Channel> = echoServer.bind(to: address)
 
 		server.whenComplete { result in
 			switch result {
-				case let .success(channel):
-					self.logger.info("server complete \(String(describing: channel.localAddress))")
-				case let .failure(error):
-					self.logger.info("server failed \(error.localizedDescription)")
+			case let .success(channel):
+				self.logger.info("server complete \(String(describing: channel.localAddress))")
+			case let .failure(error):
+				self.logger.info("server failed \(error.localizedDescription)")
 			}
 		}
 
 		return server
 	}
 
-	func setupForwarder(host: String, port: Int, guest: Int) -> PortForwarder {
+	func setupEchoServer(host: String, port: Int) throws -> EventLoopFuture<Channel> {
+		self.logger.info("Setup server: \(host), listen: \(port)")
+
+		return self.setupEchoServer(to: try SocketAddress.makeAddressResolvingHost(host, port: port))
+	}
+
+	func setupForwarder(remoteAddress: SocketAddress, bindAddress: SocketAddress) throws -> PortForwarder {
+		return try PortForwarder(group: self.group, remoteAddress: remoteAddress, bindAddress: bindAddress, proto: .udp)
+	}
+
+	func setupForwarder(host: String, port: Int, guest: Int) throws -> PortForwarder {
 		self.logger.info("Setup forwarder: \(host), port: \(port), guest: \(guest)")
 
-		let portForwarder = PortForwarder(group: self.group.next(),
-						remoteHost: host,
-						mappedPorts: [MappedPort(host: port, guest: guest, proto: .udp)],
-						bindAddress: host)
+		let portForwarder = try PortForwarder(group: self.group,
+		                                      remoteHost: host,
+		                                      mappedPorts: [MappedPort(host: port, guest: guest, proto: .udp)],
+		                                      bindAddress: host)
 
 		return portForwarder
 	}
@@ -185,8 +207,22 @@ final class UDPForwardingTests: XCTestCase {
 		try assertNoThrowWithValue(client.closeFuture.wait())
 	}
 
+	func testUDPEchoDirectWithUnixSocket() async throws {
+		let serverAddress = try SocketAddress(unixDomainSocketPath: "/tmp/server.sock", cleanupExistingSocketFile: true)
+		let clientAddress = try SocketAddress(unixDomainSocketPath: "/tmp/client.sock", cleanupExistingSocketFile: true)
+		let server = try assertNoThrowWithValue(self.setupEchoServer(to: serverAddress).wait())
+		let client = try assertNoThrowWithValue(self.setupEchoClient(from: clientAddress, to: serverAddress).wait())
+
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
+		}
+
+		try assertNoThrowWithValue(client.closeFuture.wait())
+	}
+
+
 	func testUDPEchoForwarding() async throws {
-		let forwarder = self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
+		let forwarder = try self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
 
 		_ = try assertNoThrowWithValue(forwarder.bind())
 
@@ -196,6 +232,28 @@ final class UDPForwardingTests: XCTestCase {
 
 		let server = try assertNoThrowWithValue(self.setupEchoServer(host: defaultEchoHost, port: defaultServerPort).wait())
 		let client = try assertNoThrowWithValue(self.setupEchoClient(host: defaultEchoHost, serverPort: defaultForwardPort, clientPort: defaultClientPort).wait())
+
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
+		}
+
+		try assertNoThrowWithValue(client.closeFuture.wait())
+	}
+
+	func testUDPEchoForwardingWithUnixSocket() async throws {
+		let serverAddress = try SocketAddress(unixDomainSocketPath: "/tmp/server.sock", cleanupExistingSocketFile: true)
+		let bindAddress = try SocketAddress(unixDomainSocketPath: "/tmp/bind.sock", cleanupExistingSocketFile: true)
+		let clientAddress = try SocketAddress(unixDomainSocketPath: "/tmp/client.sock", cleanupExistingSocketFile: true)
+		let forwarder = try self.setupForwarder(remoteAddress: serverAddress, bindAddress: bindAddress)
+
+		_ = try assertNoThrowWithValue(forwarder.bind())
+
+		defer {
+			XCTAssertNoThrow(try forwarder.syncShutdownGracefully())
+		}
+
+		let server = try assertNoThrowWithValue(self.setupEchoServer(to: serverAddress).wait())
+		let client = try assertNoThrowWithValue(self.setupEchoClient(from: clientAddress, to: bindAddress).wait())
 
 		defer {
 			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())

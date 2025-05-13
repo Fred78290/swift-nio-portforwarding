@@ -16,6 +16,7 @@ let package = Package(
 		.package(url: "https://github.com/apple/swift-argument-parser", .upToNextMajor(from: "1.5.0")),
 		.package(url: "https://github.com/apple/swift-nio.git", "2.60.0" ..< "3.0.0"),
 		.package(url: "https://github.com/apple/swift-log.git", "1.5.0" ..< "2.0.0"),
+		.package(url: "https://github.com/apple/swift-atomics.git", .upToNextMajor(from: "1.2.0")),
 	],
 	targets: [
 		.target(
@@ -26,6 +27,7 @@ let package = Package(
 				.product(name: "NIOPosix", package: "swift-nio"),
 				.product(name: "NIOHTTP1", package: "swift-nio"),
 				.product(name: "Logging", package: "swift-log"),
+				.product(name: "Atomics", package: "swift-atomics"),
 			],
 			path: "Sources/Lib"
 		),
