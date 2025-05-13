@@ -7,24 +7,72 @@ import Logging
 
 final class CustomPortForwarder: PortForwarder, @unchecked Sendable {
 	class CustomTCPPortForwardingServer: TCPPortForwardingServer {
+		var runningTask: Task<Void, any Error>? = nil
+
+		func stream(fromChannel: NIOAsyncChannel<ByteBuffer, ByteBuffer>, toChannel: NIOAsyncChannel<ByteBuffer, ByteBuffer>) async throws {
+			try await fromChannel.executeThenClose { (fromInput: NIOAsyncChannelInboundStream<ByteBuffer>, fromOutput: NIOAsyncChannelOutboundWriter<ByteBuffer>) in
+				try await toChannel.executeThenClose { (toInput: NIOAsyncChannelInboundStream<ByteBuffer>, toOutput: NIOAsyncChannelOutboundWriter<ByteBuffer>) in
+					await withTaskGroup { group in
+
+						group.addTask {
+							do {
+								for try await data in fromInput {
+									try await toOutput.write(data)
+								}
+							} catch {
+								Log(self).error("Failed to read from input: \(error)")
+							}
+						}
+
+						group.addTask {
+							do {
+								for try await data in toInput {
+									try await fromOutput.write(data)
+								}
+							} catch {
+								Log(self).error("Failed to read from output: \(error)")
+							}
+						}
+
+						await group.waitForAll()
+					}
+				}
+			}
+		}
+
 		override func childChannelInitializer(channel: Channel) -> EventLoopFuture<Void> {
 			if isDebugLog() {
 				Log(self).debug("connection from: \(String(describing: channel.remoteAddress))")
 			}
 
-			return ClientBootstrap(group: channel.eventLoop)
+			ClientBootstrap(group: channel.eventLoop)
 				.connect(to: remoteAddress)
-				.flatMap { childChannel in
-					let (ours, theirs) = GlueHandler.matchedPair()
+				.flatMapThrowing { childChannel in
+					return (
+						try NIOAsyncChannel<ByteBuffer, ByteBuffer>(wrappingChannelSynchronously: childChannel),
+						try NIOAsyncChannel<ByteBuffer, ByteBuffer>(wrappingChannelSynchronously: channel)
+					)
+				}.whenComplete {
+					switch $0 {
+					case .success(let channels):
+						self.runningTask = Task {			
+							defer {
+								self.runningTask = nil
+							}
 
-					if isDebugLog() {
-						Log(self).debug("connected to: \(String(describing: childChannel.remoteAddress))")
-					}
-
-					return childChannel.pipeline.addHandlers([TCPWrapperHandler(), ours, ErrorHandler()]).flatMap {
-						channel.pipeline.addHandlers([theirs, ErrorHandler()])
+							do {
+								try await self.stream(fromChannel: channels.0, toChannel: channels.1)
+							} catch {
+								Log(self).error("Failed to stream data: \(error)")
+								throw error
+							}
+						}
+					case .failure(let error):
+						Log(self).error("Failed to connect to remote address: \(error)")
 					}
 				}
+
+			return channel.eventLoop.makeSucceededVoidFuture()
 		}
 	}
 
