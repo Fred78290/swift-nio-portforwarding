@@ -4,7 +4,7 @@ import NIOCore
 import NIOHTTP1
 import NIOPosix
 
-enum PortForwardingError: Error {
+public enum PortForwardingError: Error {
 	case unimplementedProtocol
 	case unsupportedProtocol(String)
 	case alreadyBinded(String)
