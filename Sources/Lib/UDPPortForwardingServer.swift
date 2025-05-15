@@ -172,17 +172,22 @@ open class UDPPortForwardingServer: PortForwarding {
 	public let remoteAddress: SocketAddress
 	public var channel: Channel?
 	public var proto: MappedPort.Proto { return .udp }
+	public var ttl: Int = 60
 
 	public init(on: EventLoop,
 	            bindAddress: SocketAddress,
 	            remoteAddress: SocketAddress,
 	            ttl: Int) {
 
+		let bootstrap = DatagramBootstrap(group: on)
+
 		self.eventLoop = on
 		self.bindAddress = bindAddress
 		self.remoteAddress = remoteAddress
-		self.bootstrap = DatagramBootstrap(group: on)
-			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+		self.ttl = ttl
+		self.bootstrap = bootstrap
+
+		_ = bootstrap.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { inboundChannel in
 				return self.channelInitializer(channel: inboundChannel)
 			}
