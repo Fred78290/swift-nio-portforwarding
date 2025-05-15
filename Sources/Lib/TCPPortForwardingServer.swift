@@ -34,7 +34,7 @@ final class TCPWrapperHandler: ChannelDuplexHandler {
 	}
 }
 
-public class TCPPortForwardingServer: PortForwarding {
+open class TCPPortForwardingServer: PortForwarding {
 	public let bootstrap: Bindable
 	public let eventLoop: EventLoop
 	public let bindAddress: SocketAddress
@@ -57,7 +57,7 @@ public class TCPPortForwardingServer: PortForwarding {
 			}
 	}
 
-	internal func childChannelInitializer(channel: Channel) -> EventLoopFuture<Void> {
+	open func childChannelInitializer(channel: Channel) -> EventLoopFuture<Void> {
 		if isDebugLog() {
 			Log(self).debug("connection from: \(String(describing: channel.remoteAddress)) -> \(String(describing: remoteAddress))")
 		}

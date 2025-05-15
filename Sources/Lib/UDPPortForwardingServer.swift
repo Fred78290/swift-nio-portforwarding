@@ -165,7 +165,7 @@ public class InboundUDPWrapperHandler: ChannelInboundHandler {
 
 }
 
-public class UDPPortForwardingServer: PortForwarding {
+open class UDPPortForwardingServer: PortForwarding {
 	public let bootstrap: Bindable
 	public let eventLoop: EventLoop
 	public let bindAddress: SocketAddress
@@ -184,9 +184,13 @@ public class UDPPortForwardingServer: PortForwarding {
 		self.bootstrap = DatagramBootstrap(group: on)
 			.channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
 			.channelInitializer { inboundChannel in
-				inboundChannel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress, bindAddress: bindAddress, ttl: ttl))
+				return self.channelInitializer(channel: inboundChannel)
 			}
 	}
+
+    open func channelInitializer(channel: Channel) -> EventLoopFuture<Void> {
+		channel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress, bindAddress: bindAddress, ttl: ttl))
+    }
 
 	public func setChannel(_ channel: any NIOCore.Channel) {
 		self.channel = channel

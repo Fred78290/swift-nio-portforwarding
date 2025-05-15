@@ -182,7 +182,7 @@ extension PortForwardings {
 	}
 }
 
-public class PortForwarder: @unchecked Sendable {
+open class PortForwarder: @unchecked Sendable {
 	internal let group: EventLoopGroup
 	internal var shutdownGroup: Bool = false
 	internal var serverBootstrap: [any PortForwarding] = []
@@ -464,11 +464,11 @@ public class PortForwarder: @unchecked Sendable {
 		}
 	}
 
-	public func createTCPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) throws -> TCPPortForwardingServer {
+	open func createTCPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) throws -> TCPPortForwardingServer {
 		return TCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress)
 	}
 
-	public func createUDPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, ttl: Int) throws -> UDPPortForwardingServer {
+	open func createUDPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, ttl: Int) throws -> UDPPortForwardingServer {
 		return UDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl)
 	}
 }
