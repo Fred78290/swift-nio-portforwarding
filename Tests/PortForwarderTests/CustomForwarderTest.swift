@@ -76,7 +76,7 @@ final class CustomPortForwarder: PortForwarder, @unchecked Sendable {
 		}
 	}
 
-	override func createTCPPortForwardingServer(on: any EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) throws -> TCPPortForwardingServer {
+	override func createTCPPortForwardingServer(on: any EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress) throws -> any PortForwarding {
 		return CustomTCPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress)
 	}
 }
