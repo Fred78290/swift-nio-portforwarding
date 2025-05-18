@@ -9,6 +9,12 @@ public struct ForwardedPort: Sendable, Codable {
 	public init() {
 		
 	}
+
+	init(proto: MappedPort.Proto, host: Int, guest: Int) {
+		self.host = host
+		self.guest = guest
+		self.proto = proto
+	}
 }
 
 extension ForwardedPort: CustomStringConvertible, ExpressibleByArgument {
