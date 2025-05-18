@@ -17,3 +17,8 @@ public struct MappedPort: Sendable, Codable {
 	}
 }
 
+extension MappedPort: Equatable {
+	public static func == (lhs: MappedPort, rhs: MappedPort) -> Bool {
+		return lhs.host == rhs.host && lhs.guest == rhs.guest && lhs.proto == rhs.proto
+	}
+}
