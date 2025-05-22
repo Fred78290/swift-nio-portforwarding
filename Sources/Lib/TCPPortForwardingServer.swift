@@ -77,7 +77,7 @@ open class TCPPortForwardingServer: PortForwarding {
 			}
 	}
 
-	public func setChannel(_ channel: any NIOCore.Channel) {
+	public func setChannel(_ channel: Channel?) {
 		self.channel = channel
 	}
 }

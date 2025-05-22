@@ -197,7 +197,7 @@ open class UDPPortForwardingServer: PortForwarding {
 		channel.pipeline.addHandler(InboundUDPWrapperHandler(remoteAddress: remoteAddress, bindAddress: bindAddress, ttl: ttl))
     }
 
-	public func setChannel(_ channel: any NIOCore.Channel) {
+	public func setChannel(_ channel: Channel?) {
 		self.channel = channel
 	}
 }
