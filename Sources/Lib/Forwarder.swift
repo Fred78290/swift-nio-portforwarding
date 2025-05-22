@@ -165,11 +165,15 @@ public class PortForwarderClosure: @unchecked Sendable {
 	}
 
 	public func get() async throws {
-		try await self.promise.futureResult.get()
+		if self.channels.isEmpty == false {
+			try await self.promise.futureResult.get()
+		}
 	}
 
 	public func wait() throws {
-		try self.promise.futureResult.wait()
+		if self.channels.isEmpty == false {
+			try self.promise.futureResult.wait()
+		}
 	}
 }
 
@@ -189,6 +193,7 @@ open class PortForwarder: @unchecked Sendable {
 	internal var portForwarderClosure: PortForwarderClosure? = nil
 
 	private enum RunState {
+		case idle
 		case running
 		case closed
 		case closing
@@ -199,7 +204,7 @@ open class PortForwarder: @unchecked Sendable {
 	private typealias ShutdownGracefullyCallback = (Error?) -> Void
 
 	private let shutdownLock: NIOLock = NIOLock()
-	private var runState: RunState = .running
+	private var runState: RunState = .idle
 
 	deinit {
 		if shutdownGroup {
@@ -287,7 +292,7 @@ open class PortForwarder: @unchecked Sendable {
 				// has already been initiaited.
 				self.runState = .stopping([])
 				return true
-			case .closed, .closing:
+			case .idle, .closed, .closing:
 				// If we are already closed, we can directly dispatch the `handler`
 				// and return.
 				q.async {
@@ -333,7 +338,7 @@ open class PortForwarder: @unchecked Sendable {
 			g.notify(queue: q) {
 				let queueCallbackPairs = self.shutdownLock.withLock {
 					switch self.runState {
-					case .stopped, .running, .closed, .closing:
+					case .idle, .stopped, .running, .closed, .closing:
 						preconditionFailure("PortForwarder in illegal state when closing: \(self.runState)")
 					case .stopping(let callbacks):
 						self.runState = .stopped(err)
@@ -356,7 +361,9 @@ open class PortForwarder: @unchecked Sendable {
 
 	public func bind() throws -> PortForwarderClosure {
 		switch self.runState {
-		case .running,.closed:
+		case .idle, .closed:
+			self.runState = .running
+
 			guard let portForwarderClosure = self.portForwarderClosure else {
 				self.portForwarderClosure = PortForwarderClosure(self.serverBootstrap.bind(), on: self.group.next())
 
@@ -364,6 +371,8 @@ open class PortForwarder: @unchecked Sendable {
 			}
 
 			return portForwarderClosure
+		case .running:
+			throw PortForwardingError.alreadyBinded("Port forwarder already running")
 		default:
 			throw PortForwardingError.closePending
 		}
@@ -384,8 +393,20 @@ open class PortForwarder: @unchecked Sendable {
 			throw PortForwardingError.notFound("Port forwarding not found for \(proto):\(bindAddress) -> \(remoteAddress)")
 		}
 
-		EventLoopFuture.andAllComplete(concerned.map { $0.close() }, on: self.group.next()).whenComplete { result in
+		// Handle the case where the port forwarding is already closed
+		if concerned.allSatisfy({ $0.channel == nil }) {
 			self.serverBootstrap.removeAll(where: filter)
+		} else {
+			// If the port forwarding is still open, we need to close it
+			// and remove it from the list of port forwardings.
+			EventLoopFuture.andAllComplete(concerned.compactMap {
+				if $0.channel != nil {
+					return $0.close()
+				}
+				return nil
+			}, on: self.group.next()).whenComplete { result in
+				self.serverBootstrap.removeAll(where: filter)
+			}
 		}
 	}
 
@@ -394,8 +415,11 @@ open class PortForwarder: @unchecked Sendable {
 	}
 
 	public func addPortForwardingServer(remoteHost: String, mappedPorts: [MappedPort], bindAddress: [String] = ["127.0.0.1", "::1"], udpConnectionTTL: Int = 5) throws -> [any PortForwarding] {
-		guard case .running = self.runState else {
+		switch self.runState {
+		case .stopping, .stopped:
 			throw PortForwardingError.closePending
+		default:
+			break
 		}
 
 		let portForwarding = try bindAddress.reduce(into: [any PortForwarding]()) { partialResult, bindAddress in
@@ -424,9 +448,13 @@ open class PortForwarder: @unchecked Sendable {
 
 		self.serverBootstrap.append(contentsOf: portForwarding)
 
-		if let portForwarderClosure = self.portForwarderClosure {
-			// Append the new channels to the port forwarder closure
-			try portForwarderClosure.appendChannel(portForwarding.bind())
+		if case .running = self.runState {
+			// If the port forwarder is already running, we need to bind the new channels
+			// to the port forwarder closure.
+			if let portForwarderClosure = self.portForwarderClosure {
+				// Append the new channels to the port forwarder closure
+				try portForwarderClosure.appendChannel(portForwarding.bind())
+			}
 		}
 
 		return portForwarding
