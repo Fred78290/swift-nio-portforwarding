@@ -108,11 +108,12 @@ public class PortForwarderClosure: @unchecked Sendable {
 		self.closeFuture.whenComplete { _ in
 			let counter: Int = self.counter.wrappingDecrementThenLoad(ordering: .relaxed)
 
-			Log(self).info("Port forwarder closure: \(counter) channels left")
+			Log(self).debug("Port forwarder closure: \(counter) channels left")
 
 			if counter == 0 {
 				self.closing = true
 				self.promise.succeed()
+				Log(self).info("Port forwarder closed")
 			}
 		}
 	}
