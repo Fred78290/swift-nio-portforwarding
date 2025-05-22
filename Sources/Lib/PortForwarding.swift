@@ -26,10 +26,14 @@ public protocol PortForwarding: Equatable {
 }
 
 extension PortForwarding {
+	public func equals(_ other: any PortForwarding) -> Bool {
+		return self.bindAddress == other.bindAddress
+			&& self.remoteAddress == other.remoteAddress
+			&& self.proto == other.proto
+	}
+
 	public static func == (lhs: Self, rhs: Self) -> Bool {
-		return lhs.bindAddress == rhs.bindAddress
-			&& lhs.remoteAddress == rhs.remoteAddress
-			&& lhs.proto == rhs.proto
+		lhs.equals(rhs)
 	}
 }
 
