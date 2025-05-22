@@ -461,8 +461,11 @@ open class PortForwarder: @unchecked Sendable {
 	}
 
 	public func addPortForwardingServer(bindAddress: SocketAddress, remoteAddress: SocketAddress, proto: MappedPort.Proto, ttl: Int) throws -> [any PortForwarding] {
-		guard case .running = self.runState else {
+		switch self.runState {
+		case .stopping, .stopped:
 			throw PortForwardingError.closePending
+		default:
+			break
 		}
 
 		let filter: (any PortForwarding) -> Bool = {
