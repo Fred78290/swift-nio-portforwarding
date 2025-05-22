@@ -384,8 +384,9 @@ open class PortForwarder: @unchecked Sendable {
 			throw PortForwardingError.notFound("Port forwarding not found for \(proto):\(bindAddress) -> \(remoteAddress)")
 		}
 
-		// Remove the port forwarding from the list
-		self.serverBootstrap.removeAll(where: filter)
+		EventLoopFuture.andAllComplete(concerned.map { $0.close() }, on: self.group.next()).whenComplete { result in
+			self.serverBootstrap.removeAll(where: filter)
+		}
 	}
 
 	public func addPortForwardingServer(remoteHost: String, mappedPorts: [MappedPort], bindAddress: String, udpConnectionTTL: Int = 5) throws -> [any PortForwarding] {
