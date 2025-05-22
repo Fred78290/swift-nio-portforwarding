@@ -190,8 +190,10 @@ open class PortForwarder: @unchecked Sendable {
 
 	private enum RunState {
 		case running
-		case closing([(DispatchQueue, ShutdownGracefullyCallback)])
-		case closed(Error?)
+		case closed
+		case closing
+		case stopping([(DispatchQueue, ShutdownGracefullyCallback)])
+		case stopped(Error?)
 	}
 
 	private typealias ShutdownGracefullyCallback = (Error?) -> Void
@@ -283,15 +285,22 @@ open class PortForwarder: @unchecked Sendable {
 				// If we are still running, we set the `runState` to `closing`,
 				// so that potential future invocations know, that the shutdown
 				// has already been initiaited.
-				self.runState = .closing([])
+				self.runState = .stopping([])
 				return true
-			case .closing(var callbacks):
+			case .closed, .closing:
+				// If we are already closed, we can directly dispatch the `handler`
+				// and return.
+				q.async {
+					handler(nil)
+				}
+				return false
+			case .stopping(var callbacks):
 				// If we are currently closing, we need to register the `handler`
 				// for invocation after the shutdown is completed.
 				callbacks.append((q, handler))
-				self.runState = .closing(callbacks)
+				self.runState = .stopping(callbacks)
 				return false
-			case .closed(let error):
+			case .stopped(let error):
 				// If we are already closed, we can directly dispatch the `handler`
 				q.async {
 					handler(error)
@@ -324,10 +333,10 @@ open class PortForwarder: @unchecked Sendable {
 			g.notify(queue: q) {
 				let queueCallbackPairs = self.shutdownLock.withLock {
 					switch self.runState {
-					case .closed, .running:
+					case .stopped, .running, .closed, .closing:
 						preconditionFailure("PortForwarder in illegal state when closing: \(self.runState)")
-					case .closing(let callbacks):
-						self.runState = .closed(err)
+					case .stopping(let callbacks):
+						self.runState = .stopped(err)
 						return callbacks
 					}
 				}
@@ -346,17 +355,18 @@ open class PortForwarder: @unchecked Sendable {
 	}
 
 	public func bind() throws -> PortForwarderClosure {
-		guard case .running = self.runState else {
+		switch self.runState {
+		case .running,.closed:
+			guard let portForwarderClosure = self.portForwarderClosure else {
+				self.portForwarderClosure = PortForwarderClosure(self.serverBootstrap.bind(), on: self.group.next())
+
+				return self.portForwarderClosure!
+			}
+
+			return portForwarderClosure
+		default:
 			throw PortForwardingError.closePending
 		}
-
-		guard let portForwarderClosure = self.portForwarderClosure else {
-			self.portForwarderClosure = PortForwarderClosure(self.serverBootstrap.bind(), on: self.group.next())
-
-			return self.portForwarderClosure!
-		}
-
-		return portForwarderClosure
 	}
 
 	public func removePortForwardingServer(bindAddress: SocketAddress, remoteAddress: SocketAddress, proto: MappedPort.Proto, ttl: Int) throws {
@@ -470,5 +480,47 @@ open class PortForwarder: @unchecked Sendable {
 
 	open func createUDPPortForwardingServer(on: EventLoop, bindAddress: SocketAddress, remoteAddress: SocketAddress, ttl: Int) throws -> any PortForwarding {
 		return UDPPortForwardingServer(on: on, bindAddress: bindAddress, remoteAddress: remoteAddress, ttl: ttl)
+	}
+
+	public func close(promise: EventLoopPromise<Void>? = nil) {
+		let wasRunning: Bool = self.shutdownLock.withLock {
+			// We need to check the current `runState` and react accordingly.
+			switch self.runState {
+			case .running:
+				return true
+			default:
+				return false
+			}
+		}
+
+		guard wasRunning else {
+			if let promise = promise {
+				promise.succeed()
+			}
+
+			return
+		}
+
+		self.runState = .closing
+
+		EventLoopFuture.andAllComplete(self.serverBootstrap.map { $0.close() }, on: self.group.next()).whenComplete { result in
+			self.runState = .closed
+			self.portForwarderClosure = nil
+
+			switch result {
+			case .success:
+				if let promise = promise {
+					promise.succeed()
+				}
+				if isDebugLog() {
+					Log(self).debug("Port forwarder closed")
+				}
+			case let .failure(error):
+				if let promise = promise {
+					promise.fail(error)
+				}
+				Log(self).error("Failed to close port forwarder, \(error)")
+			}
+		}
 	}
 }

@@ -384,4 +384,31 @@ final class TCPForwardingTests: XCTestCase {
 		                                                           	MappedPort(host: 8081, guest: 80, proto: .tcp)],
 		                                                           bindAddress: "127.0.0.1"))
 	}
+
+	func testTCPEchoForwardingStopRebind() async throws {
+		let helper = TcpHelper(group: group)
+		let forwarder = try self.setupForwarder(host: defaultEchoHost, port: defaultForwardPort, guest: defaultServerPort)
+		let promise = group.next().makePromise(of: Void.self)
+
+		_ = try assertNoThrowWithValue(forwarder.bind())
+
+		defer {
+			XCTAssertNoThrow(try forwarder.syncShutdownGracefully())
+		}
+
+		forwarder.close(promise: promise)
+
+		try await promise.futureResult.get()
+
+		_ = try assertNoThrowWithValue(forwarder.bind())
+
+		let server = try assertNoThrowWithValue(helper.setupEchoServer(host: defaultEchoHost, port: defaultServerPort).wait())
+		let client = try assertNoThrowWithValue(helper.setupEchoClient(host: defaultEchoHost, serverPort: defaultForwardPort).wait())
+
+		defer {
+			XCTAssertNoThrow(try server.syncCloseAcceptingAlreadyClosed())
+		}
+
+		try assertNoThrowWithValue(client.closeFuture.wait())
+	}
 }

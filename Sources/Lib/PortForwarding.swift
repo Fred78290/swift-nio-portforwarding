@@ -20,7 +20,7 @@ public protocol PortForwarding: Equatable {
 	var channel: Channel? { get }
 	var eventLoop: EventLoop { get }
 
-	func setChannel(_ channel: Channel)
+	func setChannel(_ channel: Channel?)
 	func bind() -> EventLoopFuture<Channel>
 	func close() -> EventLoopFuture<Void>
 }
@@ -55,6 +55,8 @@ extension PortForwarding {
 			// The server wasn't created yet, so we can just shut down straight away and let the OS clean us up.
 			return self.eventLoop.makeSucceededVoidFuture()
 		}
+
+		self.setChannel(nil)
 
 		Log(self).debug("Close on \(String(describing: channel.localAddress))")
 
