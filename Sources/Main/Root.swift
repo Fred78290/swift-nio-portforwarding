@@ -39,7 +39,7 @@ struct Root: ParsableCommand {
 	}
 
 	mutating func run() throws {
-		let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddress: "0.0.0.0", udpConnectionTTL: udpTTL)
+		let pfw = try PortForwarder(remoteHost: remoteHost, mappedPorts: mappedPorts, bindAddresses: ["0.0.0.0", "[::]"], udpConnectionTTL: udpTTL)
 
 		try pfw.bind().wait()
 	}
