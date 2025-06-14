@@ -56,7 +56,7 @@ extension ForwardedPort: CustomStringConvertible, ExpressibleByArgument {
 	}
 }
 
-extension ForwardedPort: Equatable {
+extension ForwardedPort: Hashable {
 	public static func == (lhs: ForwardedPort, rhs: ForwardedPort) -> Bool {
 		return lhs.host == rhs.host && lhs.guest == rhs.guest && lhs.proto == rhs.proto
 	}
