@@ -22,7 +22,6 @@ let package = Package(
 		.target(
 			name: "NIOPortForwarding",
 			dependencies: [
-				.product(name: "ArgumentParser", package: "swift-argument-parser"),
 				.product(name: "NIOCore", package: "swift-nio"),
 				.product(name: "NIOPosix", package: "swift-nio"),
 				.product(name: "NIOHTTP1", package: "swift-nio"),
@@ -35,6 +34,7 @@ let package = Package(
 			name: "PortForwarder",
 			dependencies: [
 				.target(name: "NIOPortForwarding"),
+				.product(name: "ArgumentParser", package: "swift-argument-parser"),
 				.product(name: "NIOCore", package: "swift-nio"),
 				.product(name: "NIOPosix", package: "swift-nio"),
 				.product(name: "NIOHTTP1", package: "swift-nio"),
