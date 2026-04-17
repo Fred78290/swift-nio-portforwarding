@@ -42,6 +42,12 @@ let package = Package(
 			],
 			path: "Sources/Main"
 		),
-		.testTarget(name: "PortForwarderTests", dependencies: ["NIOPortForwarding"])
+		.testTarget(
+			name: "PortForwarderTests",
+			dependencies: [
+				"NIOPortForwarding",
+				.product(name: "ArgumentParser", package: "swift-argument-parser"),
+			]
+		)
 	]
 )
