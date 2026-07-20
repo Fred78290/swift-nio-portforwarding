@@ -45,7 +45,7 @@ extension SocketAddress {
 		}
 
 		if u.scheme == "unix" || u.isFileURL {
-			socketAddress = try .init(unixDomainSocketPath: u.path)
+			socketAddress = try .init(unixDomainSocketPath: u.path(percentEncoded: false))
 		} else {
 			socketAddress = try self.makeAddressResolvingHost(u.host!, port: u.port ?? 0)
 		}

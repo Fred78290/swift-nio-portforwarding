@@ -13,7 +13,7 @@ let package = Package(
 		.executable(name: "nio-pfw", targets: ["PortForwarder"]),
 	],
 	dependencies: [
-		.package(url: "https://github.com/apple/swift-argument-parser", .upToNextMajor(from: "1.7.0")),
+		.package(url: "https://github.com/Fred78290/swift-argument-parser", revision: "d554955e8c280aa4c4a05a039a968f0205656e77"),
 		.package(url: "https://github.com/apple/swift-nio.git", "2.60.0" ..< "3.0.0"),
 		.package(url: "https://github.com/apple/swift-log.git", "1.5.0" ..< "2.0.0"),
 		.package(url: "https://github.com/apple/swift-atomics.git", .upToNextMajor(from: "1.3.0")),
