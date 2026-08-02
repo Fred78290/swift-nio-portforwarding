@@ -27,6 +27,7 @@ let package = Package(
 				.product(name: "NIOHTTP1", package: "swift-nio"),
 				.product(name: "Logging", package: "swift-log"),
 				.product(name: "Atomics", package: "swift-atomics"),
+				.product(name: "ArgumentParser", package: "swift-argument-parser"),
 			],
 			path: "Sources/Lib"
 		),
